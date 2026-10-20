@@ -1,0 +1,13 @@
+{
+  "name": "android-mainline-port",
+  "description": "把主线 Linux 移植到安卓手机、平板的操作手册与经验库",
+  "owner": { "name": "yzddmr6", "url": "https://github.com/yzddmr6" },
+  "plugins": [
+    {
+      "name": "android-mainline-port",
+      "description": "安卓设备移植主线 Linux 的流程、决策规则与踩坑经验",
+      "source": "./",
+      "skills": ["./"]
+    }
+  ]
+}
