@@ -120,4 +120,4 @@
 3. 看门狗做受控失喂测试，确认真的会复位。
 4. 产品镜像永远保留一条可打开的调试通道。
 
-**常见表现**：到期路径里无界 `sync`、视频驱动卸载死锁后关机卡住、正式镜像没有通道、systemd 去打开 hypervisor 看门狗。见 `bootloader-and-boot.md`、`sensors-camera-media.md`、`testing-and-process.md`。
+**常见表现**：到期路径里无界 `sync`、视频驱动卸载死锁后关机卡住、候选内核直接写槽后 GPU 挂死、普通重启卡在关机且回退槽已被同一候选覆盖、正式镜像没有通道、systemd 去打开 hypervisor 看门狗。见 `bootloader-and-boot.md`、`sensors-camera-media.md`、`testing-and-process.md`。
