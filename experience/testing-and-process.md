@@ -109,13 +109,14 @@
 - 现象：在已安装的系统上用包管理器升级候选内核，包钩子写了活动槽；跑应用覆盖测试时 GPU 报 `timeout waiting for GMU OOB set GPU_SET`，之后每次 hang 恢复都失败。随后发出普通 `reboot`，关机卡在 DRM 收尾，USB 调试通道已断，又没有可用的硬件看门狗，设备几个小时不可达，只能等人长按电源键。回退槽在此前重装同一版本的重建包时，也被换成了同一个候选。
 - 原因：本经验库里已有的三条规则（候选先 RAM 启动并带挂死即 panic 的参数；重启前查 D 状态任务、用 SysRq；保留已知可用的回退）只写在经验库里，没有写进执行者拿到的任务说明。执行者遇到第一个硬件故障后继续操作，没有停下。
 - 怎么确认：主机上设备的 USB 网卡还在但没有流量，adb 和 Fastboot 都找不到设备；强制重启后，上一次启动的日志停在 GPU 恢复和关机阶段。
-- 怎么解决：长按电源键强制重启。之后先用 RAM 启动验证候选，命令行带 `softlockup_panic=1 hung_task_panic=1 panic_on_oops=1 panic=10` 并设限时重启，再恢复已知可用的回退槽。
+- 怎么解决：长按电源键强制重启。之后先用 RAM 启动验证候选，命令行带 `softlockup_panic=1 hung_task_panic=1 oops=panic panic=10` 并设限时重启，再恢复已知可用的回退槽。
 - 怎么预防：
   - 把这几条做成每一份涉及设备的任务说明的必写约束，不能只放在经验库里。
   - GPU 或驱动已经挂死、或者存在 D 状态任务时，只用限时 `sync` 加 SysRq（s、u、b），或者 `systemctl reboot -ff`。
   - 第一个硬件故障出现就停测、取证、强制重启并汇报，同一次启动里不再继续测试。
   - 调试版在运行时也武装 hung-task panic 和 panic 后自动重启。
   - 重装同一内核版本的重建包时，不让它轮换掉回退槽。
+- 注意：`panic_on_oops` 只是 sysctl，写在内核命令行上不起作用，命令行要写 `oops=panic`；`hung_task_panic`、`softlockup_panic` 也要内核编进对应的检测器（`CONFIG_DETECT_HUNG_TASK`、`CONFIG_SOFTLOCKUP_DETECTOR`）才存在。上机前先确认 `/proc/sys/kernel/hung_task_panic` 存在，否则这道安全网是空的。
 - 适用范围：通用。
 
 ### 底层通过了就关闭用户层面的问题

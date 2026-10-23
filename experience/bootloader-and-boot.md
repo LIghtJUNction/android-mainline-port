@@ -92,7 +92,7 @@
 ### 用候选内核测试已安装的系统，不要直接装包
 标记：【致命】
 - 现象：直接 `dpkg -i` 候选内核包，钩子重建启动镜像集并写入活动槽，候选有问题时设备反复重启，无人在场就无法恢复。
-- 怎么解决：在设备上 `dpkg-deb -x` 解出模块目录，`depmod`，在设备上 `dracut --kver` 生成 initramfs（不写槽）；取回内核、设备树（核对身份）、initramfs，用 v2 格式打 RAM 镜像，命令行加 `softlockup_panic=1 hung_task_panic=1 panic_on_oops=1`、`panic=N`，让挂死变成重启回已安装系统；`fastboot boot` 后先设好定时重启再测试；结束后删除暂存的文件。RAM 测试通过后才走正式升级路径持久安装。
+- 怎么解决：在设备上 `dpkg-deb -x` 解出模块目录，`depmod`，在设备上 `dracut --kver` 生成 initramfs（不写槽）；取回内核、设备树（核对身份）、initramfs，用 v2 格式打 RAM 镜像，命令行加 `softlockup_panic=1 hung_task_panic=1 oops=panic`、`panic=N`，让挂死变成重启回已安装系统；`fastboot boot` 后先设好定时重启再测试；结束后删除暂存的文件。RAM 测试通过后才走正式升级路径持久安装。
 - 适用范围：自管启动镜像的设备；2026。
 
 ### Fastboot 长时间空闲，或后台仍在写数据时，`fastboot boot` 卡住、设备不再应答
