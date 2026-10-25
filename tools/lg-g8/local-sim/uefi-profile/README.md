@@ -53,6 +53,22 @@
 这里的 `-p` 路径按固件源码根目录书写；使用配置了 PACKAGES_PATH 的包装器时，使用它对应的包内路径或该 DSC 的绝对路径。
 保留原构建的 AARCH64、CLANGPDB、TARGET_DEVICE=lg-alpha 和其余必要参数。此处没有启动全量固件构建。
 
+使用该版本自带的 Stuart 包装器时，在固件根目录完成 setup/update 后执行：
+
+```sh
+python3 Platforms/SurfaceDuo1Pkg/PlatformBuildNoSb.py \
+  TARGET=RELEASE TARGET_DEVICE=lg-alpha \
+  BLD_RELEASE_LG_ALPHA_STANDARD_ESP=TRUE \
+  MAX_CONCURRENT_THREAD_NUMBER=4 --SKIPPOSTBUILD
+```
+
+该入口固定选择 NoSb DSC、AARCH64 和 CLANGPDB。
+[Stuart 的构建实现](https://github.com/tianocore/edk2-pytool-extensions/blob/v0.31.2/edk2toolext/environment/uefi_build.py)
+将 `BLD_RELEASE_*` 转成底层 `-D`，将 `MAX_CONCURRENT_THREAD_NUMBER` 转成 `-n`。
+顶层 `build_uefi.py` 不接受额外 `-D` 参数。
+`--SKIPPOSTBUILD` 跳过平台自动打 Android boot.img 的后处理，不跳过 FD 或 Shell 编译。
+上面的命令来自源码审计，完整云端构建结果仍需单独报告。
+
 已通过实际 DSC parser 和源码预处理确认：
 
 - `DEFAULT_KEYS=FALSE` 使 `ArmPlatformPkg/SecureBootDefaultKeys.fdf.inc:10` 的默认密钥 FFS 块不生成。

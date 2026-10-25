@@ -26,8 +26,20 @@
 6. 固件源码见本目录 `uefi/source.json`。在指定 commit 上初始化需要的公开子模块，
    先应用 `uefi/diagnostic-baseline.patch`，再应用 `tools/lg-g8/local-sim/uefi-profile/standard-esp.patch`。
    前一个补丁已在临时副本上验证能逐字节重建本机的五个源文件。
-   按该固件的实际构建脚本选择 lg-alpha、CLANGPDB、SurfaceDuo1NoSb.dsc 和
-   `-D LG_ALPHA_STANDARD_ESP=TRUE`，实际编译新的 FD 与 Shell.efi。不要仅做分支解析就说完成了编译。
+   如果运行 `uefi-profile/validate.py`，应在应用 standard ESP 补丁之前运行；它会在临时副本里应用该补丁。
+   完成 Stuart setup/update 后，从固件根目录使用实际 NoSb 构建入口：
+
+   ```sh
+   python3 Platforms/SurfaceDuo1Pkg/PlatformBuildNoSb.py \
+     TARGET=RELEASE TARGET_DEVICE=lg-alpha \
+     BLD_RELEASE_LG_ALPHA_STANDARD_ESP=TRUE \
+     MAX_CONCURRENT_THREAD_NUMBER=4 --SKIPPOSTBUILD
+   ```
+
+   `BLD_RELEASE_` 参数由 Stuart 转成底层 EDK2 的 `-D LG_ALPHA_STANDARD_ESP=TRUE`。
+   顶层 `build_uefi.py` 不接受 `-D`，不要直接给它加该参数。
+   `--SKIPPOSTBUILD` 只跳过 Android boot.img 打包；FD 与 Shell.efi 仍须实际编译。
+   内核与固件构建顺序执行，避免同时各用四个编译作业。不要仅做分支解析就说完成了编译。
 7. 在云端安装 QEMU AArch64 和相应 EDK2/QEMU 固件。用新编译的内核、模块和同一 Shell 跑实际模拟：
    标准 Shell → EFI stub → 匹配 QEMU virt 的外部 DTB → `/init` → USB shell。
    可用 `native-init/verify.py --shell ... --firmware ... --qemu-dtb ...`；
