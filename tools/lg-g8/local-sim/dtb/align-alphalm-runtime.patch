@@ -1,0 +1,66 @@
+--- a/arch/arm64/boot/dts/qcom/sm8150-lg-alphalm-board.dts
++++ b/arch/arm64/boot/dts/qcom/sm8150-lg-alphalm-board.dts
+@@ -27,6 +27,7 @@
+ /delete-node/ &gpu_mem;
+ /delete-node/ &spss_mem;
+ /delete-node/ &cdsp_mem;
++/delete-node/ &xbl_mem;
+ 
+ / {
+ 	model = "LG G8 ThinQ (alphalm)";
+@@ -50,6 +51,14 @@
+ 		#size-cells = <2>;
+ 		ranges;
+ 
++		/* Complete the runtime XBL/AOP range together with the SoC AOP
++		 * and cmd-db reservations at 0x85f00000 and 0x85f20000.
++		 */
++		xbl_mem: memory@85e00000 {
++			reg = <0x0 0x85e00000 0x0 0x100000>;
++			no-map;
++		};
++
+ 		tz_mem: memory@86200000 {
+ 			reg = <0x0 0x86200000 0x0 0x5500000>;
+ 			no-map;
+@@ -96,12 +105,18 @@
+ 		};
+ 
+ 		cdsp_mem: memory@99b00000 {
+-			reg = <0x0 0x99b00000 0x0 0x1400000>;
++			reg = <0x0 0x99b00000 0x0 0x3700000>;
+ 			no-map;
+ 		};
+ 
+ 		cdsp_sec_mem: memory@a4c00000 {
+-			reg = <0x0 0xa4c00000 0x0 0x3c00000>;
++			reg = <0x0 0xa4c00000 0x0 0x4000000>;
++			no-map;
++		};
++
++		/* The firmware splash and display-dump nodes share this range. */
++		splash_mem: memory@9d200000 {
++			reg = <0x0 0x9d200000 0x0 0x1200000>;
+ 			no-map;
+ 		};
+ 
+@@ -172,6 +187,10 @@
+ 		};
+ 
+ 	};
++};
++
++&qseecom_mem {
++	reg = <0x0 0x9e400000 0x0 0x1c00000>;
+ };
+ 
+ &apps_rsc {
+@@ -649,7 +668,7 @@
+ };
+ 
+ &usb_2 {
+-	status = "okay";
++	status = "disabled";
+ };
+ 
+ &usb_2_hsphy {

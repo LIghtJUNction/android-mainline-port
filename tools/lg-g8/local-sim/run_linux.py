@@ -17,7 +17,11 @@ import shutil
 import stat
 import struct
 import subprocess
+import sys
 import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from uefi_esp import build_esp
 
 
 def digest(data: bytes) -> str:
@@ -286,6 +290,8 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=70)
     parser.add_argument("--usb-module-dir", type=Path,
                         help="Optional matching dummy_hcd and cdc-acm modules for local USB traffic tests")
+    parser.add_argument("--shell", type=Path,
+                        help="Existing standard ARM64 Shell.efi, tested unmodified through startup.nsh")
     opts = parser.parse_args()
     out = opts.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -332,6 +338,25 @@ def main() -> None:
         usb_result["matched"] &= usb_result["both_directions"]
         report["tests"]["fixed_uefi_usb"] = usb_result
         shutil.copyfile(out / "initramfs-fixed.cpio", esp / "initramfs.cpio")
+    if opts.shell:
+        shell_esp = out / "shell-esp"
+        shell_initrd = out / ("initramfs-usb-test.cpio" if opts.usb_module_dir else "initramfs-fixed.cpio")
+        shell_manifest = build_esp(opts.shell, out / "kernel.efi", shell_initrd, shell_esp,
+            "console=ttyAMA0,115200 earlycon=pl011,0x09000000 acpi=off rdinit=/sim-init panic=0 loglevel=7")
+        shell_result = run_qemu(["-bios", str(opts.firmware.resolve()),
+            "-drive", f"if=none,id=esp,format=raw,readonly=on,file=fat:ro:{shell_esp}",
+            "-device", "virtio-blk-device,drive=esp,bootindex=1"],
+            out / "fixed-standard-shell.log", opts.timeout, "LOCAL-SIM PASS")
+        shell_text = (out / "fixed-standard-shell.log").read_text(errors="replace")
+        shell_result["standard_shell_started"] = "LGG8 STANDARD_EFI_SHELL" in shell_text
+        shell_result["uefi_present"] = "LOCAL-SIM UEFI_PRESENT" in shell_text
+        shell_result["manifest"] = shell_manifest
+        shell_result["matched"] &= shell_result["standard_shell_started"] and shell_result["uefi_present"]
+        if opts.usb_module_dir:
+            shell_result["both_directions"] = all(marker in shell_text for marker in
+                ("LOCAL-SIM USB_HOST_TO_GADGET_OK", "LOCAL-SIM USB_GADGET_TO_HOST_OK"))
+            shell_result["matched"] &= shell_result["both_directions"]
+        report["tests"]["fixed_standard_shell"] = shell_result
     report["passed"] = (all(test["matched"] for test in report["tests"].values())
                         and report["tests"]["fixed_uefi"]["uefi_marker"])
     (out / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

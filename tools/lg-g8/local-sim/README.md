@@ -13,9 +13,14 @@ python3 tools/lg-g8/local-sim/run_all.py
 仓库旁边的 `../lg-g8-sources-20261025/mu_aloha_platforms`。
 这些镜像和源码不包含在本仓库中。换目录可用 `--workspace`、`--edk2-source`；
 每个输入也有单独参数，运行 `--help` 查看。
+板级检查还需要干净的运行时 FDT，默认读取 `out/transport-clean/runtime-fdt.dtb`；
+历史导出受损的情况先按 [二进制导出纠错](../../../docs/lg-g8-omarchy/EXPORT-REPAIR.md) 修复。
+也可用 `--runtime-fdt` 指定已经验证过的输入。
 
 需要 Python 3.10+、QEMU AArch64、AArch64 EDK2 固件、Clang/LLD、LLVM objcopy/objdump、
-make、uv，以及该内核已完成的构建目录。BootShim 的 Unicorn 2.1.4 依赖由 uv 放在隔离缓存中。
+make、uv、dtc/libfdt、patch、avbtool，以及该内核已完成的构建目录。
+标准 Shell 测试读取板级固件已经构建的 `Build/SurfaceDuo1Pkg/RELEASE_CLANGPDB/AARCH64/Shell.efi`，
+可用 `--shell` 改路径。BootShim 的 Unicorn 2.1.4 依赖由 uv 放在隔离缓存中。
 本次使用 QEMU 11.1.2、现有 Linux **7.3.0-sm8150**；不会重编完整内核。
 USB 测试只编译两个外部模块，并核对原有 Image 和 `.config` 的哈希未变化。
 
@@ -51,11 +56,15 @@ bb475e12ce81e2e599a643317d50b0a8603d1eec573ca41be09fa029307163a7
 | 修复包直接启动 | QEMU 启动同一内核，原 `/init` 运行并建立 configfs USB gadget |
 | 标准 UEFI 启动 | QEMU EDK2 从虚拟 FAT/ESP 加载小型标准 EFI 程序，由它调用内核 EFI stub；原 `/init` 运行 |
 | UEFI + 虚拟 USB | 同上，加上内核虚拟 USB 控制器；检查 ACM 枚举和两方向内容相同的传输 |
+| 固件自带标准 Shell | 直接使用板级构建的同一份 Shell.efi，通过同目录 startup.nsh 启动内核；检查原 `/init`、UEFI 和虚拟 USB 双向收发 |
+| LG 板级设备树 | 应用真实板级补丁并编译，要求全部 runtime 固定保留内存被覆盖、无候选重叠、三段 RAM/板号/PSCI/USB 和 cmd-db 匹配 |
+| 导出修复回归 | 5 项本机测试，覆盖原生 CR/LF 的保留、拒绝部分转换和坏 FDT、重复运行及拒绝覆盖不同输出 |
 | BootShim | Unicorn 执行两个实际 UEFI 镜像里的 112 字节跳板，20 次检查 3 MiB 搬运、跳转和寄存器；12 项坏输入由主机预检拒绝 |
 | UEFI fastboot | 原 C 控制流加 EFI/USB 边界替身，31 项预期结果；包括正常结果和故障复现 |
 
 BootShim 检查停在 UEFI 的第一条指令前。QEMU 使用通用 `virt` 主板和 QEMU 的 EDK2，
-不是 LG 的 ABL、设备树或那份板级 UEFI。几组检查分别验证各段软件，不能当作整条 LG 启动链已经通过。
+不是 LG 的 ABL、设备树或那份板级 UEFI。标准 Shell 二进制相同，固件本身不同。
+几组检查分别验证各段软件，不能当作整条 LG 启动链已经通过。
 QEMU 没有 LG G8/SM8150 主板模型，不能验证它的内存保留区、显示、触摸、UFS、电源和物理 USB。
 因此，结果证明本机的软件启动和修复有效，不能据此宣称 LG G8 或 Omarchy 已适配完成。
 
@@ -66,13 +75,24 @@ QEMU 没有 LG G8/SM8150 主板模型，不能验证它的内存保留区、显�
 - `suite.json`：本轮命令、返回值、数量和总判定；失败会保留失败状态。
 - `linux/result.json` 和 `*.log`：QEMU 启动串口记录及输入哈希。
 - `linux/esp/`：测试使用的虚拟 ESP；包含检查脚本，属于模拟测试输入。
-- `software/kernel.efi`、`software/initramfs.cpio`、`software/manifest.json`：同一内核和修复后的干净运行包。
+- `software/kernel.efi`、`software/initramfs.cpio`、`software/board.dtb`、`software/manifest.json`：同一内核、修复后的干净运行包和校准后的 LG 板树。
+- `phone-probe-esp/`：上述文件加标准 Shell 和手机参数的 startup.nsh；这是待设备验收的诊断 ESP 文件夹。
+- `dtb/report.json`：手机板树的独立静态检查结果；没有把它放到不匹配的 QEMU virt 主板上运行。
 - `bootshim/report.json`：逐个镜像、DTB 和搬运路径的结果。
 - `fastboot/results.json`：31 个用例的结果，旁边保留各项日志和源码 manifest。
 
-`software/` 没有模拟脚本或虚拟 USB 模块，也没有手机所需的 DTB、启动打包或完整根文件系统。
-它不是可直接刷入手机的成品镜像。Android header 在这里仅用于提取内核和 initramfs，
+`software/` 和 `phone-probe-esp/` 没有模拟脚本或虚拟 USB 模块，也没有完整发行版根文件系统。
+它们不是可直接刷入手机的分区镜像。手机固件目前还有强制 fastboot 的实验开关，
+且内置 DTB 是占位文件；必须使用校准后的外部板树，并满足 EFI stub 对 `dtb=` 的加载条件。
+Android header 在这里仅用于提取内核和 initramfs，
 未在 QEMU 中执行 LG ABL 对 header 和加载地址的处理。
+
+独立生成标准 Shell ESP 可用 `python3 tools/lg-g8/uefi_esp.py --help`。
+它使用现成的 Shell，不增加自定义启动协议。`startup.nsh` 放在 Shell 同目录，
+通过 Shell 提供的 `%homefilesystem%` 找内核，避免猜测 FS0/FS1。
+Linux 的 `initrd=` 和 `dtb=` 使用 ESP 根目录起始的 EFI 路径。
+外部 DTB 会替代固件提供的树，且受 Secure Boot 状态限制；这些机制见
+[EFI stub 文档](https://docs.kernel.org/admin-guide/efi-stub.html)。
 
 各部分也能单独运行，参见 [BootShim](bootshim/README.md)、[fastboot](fastboot/README.md)
 和 `run_linux.py --help`。单次虚拟启动通常几秒到十几秒；整套耗时受模块准备、缓存和本机负载影响。
