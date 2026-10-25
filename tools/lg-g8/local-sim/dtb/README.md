@@ -4,6 +4,8 @@
 `arch/arm64/boot/dts/qcom/sm8150-lg-alphalm-board.dts`。
 它修复已从干净运行时 FDT 确认的地址/大小差异，并关闭该手机运行时未启用的第二个 USB 控制器。
 它不改变外部内核源码，不操作手机，也没有用通用 QEMU 设备树冒充手机设备树。
+完整的校准后板树已放在 [devices/lg-alphalm](../../../../devices/lg-alphalm/README.md)，
+工具还要求补丁输出与仓库中这份完整源码逐字节相同。
 
 ```sh
 python3 tools/lg-g8/local-sim/dtb/verify.py \

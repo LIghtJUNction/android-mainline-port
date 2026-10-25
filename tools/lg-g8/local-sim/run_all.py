@@ -53,7 +53,7 @@ def main() -> int:
         work / "audit/usbconfig-stock-v7-20261025/lg-alpha-usbconfig-stock-v7.img",
         work / "audit/uefi-bootcmd-20261025-v1/lg-alpha-bootcmd.img",
     ]
-    required_tools = ["qemu-system-aarch64", "clang", "lld-link", "llvm-objcopy", "llvm-objdump", "make", "uv", "dtc", "patch", "avbtool"]
+    required_tools = ["qemu-system-aarch64", "clang", "lld-link", "llvm-objcopy", "llvm-objdump", "make", "uv", "dtc", "fdtget", "fdtput", "patch", "avbtool"]
     missing = [name for name in required_tools if not shutil.which(name)]
     if missing:
         parser.error("Missing tools: " + ", ".join(missing))
@@ -63,7 +63,7 @@ def main() -> int:
         if not path.is_file():
             parser.error(f"Missing input: {path}")
     report = {"started_at_utc": datetime.now(timezone.utc).isoformat(),
-              "scope": "local CPU emulation, QEMU virt Linux/UEFI/virtual USB, native firmware boundary mocks",
+              "scope": "local CPU emulation, QEMU virt Linux/UEFI/virtual USB, static LG DTB/configuration, native firmware boundary mocks",
               "phone_access": False, "lg_hardware_acceptance": False,
               "steps": [], "passed": False}
 
@@ -90,6 +90,17 @@ def main() -> int:
         ("linux", [py, HERE / "run_linux.py", "--boot-image", boot, "--musl-root", musl,
                    "--edk2-source", edk2, "--firmware", args.firmware, "--usb-module-dir", out / "usb-modules",
                    "--shell", shell, "--out", out / "linux"]),
+        ("external-dtb-handoff", [py, HERE / "verify_external_dtb.py", "--kernel", out / "linux/kernel.efi",
+            "--base-initrd", out / "linux/initramfs-repaired.cpio", "--modules", out / "usb-modules",
+            "--shell", shell, "--firmware", args.firmware, "--out", out / "external-dtb"]),
+        ("native-usb-shell", [py, HERE / "native-init/verify.py", "--kernel", out / "linux/kernel.efi",
+            "--initramfs", out / "linux/initramfs-repaired.cpio", "--usb-module-dir", out / "usb-modules",
+            "--shell", shell, "--firmware", args.firmware,
+            "--qemu-dtb", out / "external-dtb/qemu-virt-external.dtb", "--out", out / "native-init"]),
+        ("uefi-build-profile", [py, HERE / "uefi-profile/validate.py", "--source-root", edk2,
+                                "--out", out / "uefi-profile"]),
+        ("uefi-packaged-bds", [py, HERE / "uefi-profile/audit_bds.py", "--source-root", edk2,
+                               "--out", out / "uefi-profile/bds-audit.json"]),
         ("bootshim", [HERE / "bootshim/run.sh", "--source", edk2 / "BootShim/BootShim.S",
                       "--output-dir", out / "bootshim"]
                      + [value for image in images for value in ("--image", image.resolve())]),
@@ -104,6 +115,9 @@ def main() -> int:
     shim = json.loads((out / "bootshim/report.json").read_text())
     fastboot = json.loads((out / "fastboot/results.json").read_text())
     dtb = json.loads((out / "dtb/report.json").read_text())
+    external_dtb = json.loads((out / "external-dtb/report.json").read_text())
+    profile = json.loads((out / "uefi-profile/report.json").read_text())
+    native = json.loads((out / "native-init/report.json").read_text())
     required_config = ["EFI_STUB", "EFI_ARMSTUB_DTB_LOADER", "USB_DWC3", "USB_DWC3_QCOM", "USB_GADGET",
                        "USB_CONFIGFS", "USB_CONFIGFS_ACM", "DEVTMPFS", "PROC_FS", "SYSFS", "CONFIGFS_FS",
                        "PHY_QCOM_QUSB2", "PHY_QCOM_QMP_USB", "QCOM_SCM", "QCOM_SMEM", "QCOM_COMMAND_DB",
@@ -117,11 +131,14 @@ def main() -> int:
         "bootshim": shim["passed"],
         "fastboot_expected_outcomes": all(case["pass"] for case in fastboot["results"]),
         "lg_board_static_dtb_contract": dtb["passed"],
+        "efi_external_dtb_handoff": external_dtb["passed"],
+        "standard_esp_source_profile": profile["passed"],
+        "native_root_shell_and_reconnection": native["passed"],
         "lg_required_drivers_builtin": all(report["kernel_config"]["required_builtin"].values()),
         "kernel_matches_input_build": sha(out / "linux/kernel.efi") == sha(build / "arch/arm64/boot/Image"),
     }
     report["counts"] = {
-        "linux_boot_scenarios": len(linux["tests"]),
+        "linux_boot_scenarios": len(linux["tests"]) + 2,
         "bootshim_handoffs": sum(len(image["emulation_cases"]) for image in shim["images"]),
         "bootshim_preflight_rejections": sum(len(image["negative_checks"]) for image in shim["images"]),
         "fastboot_expected_outcomes": len(fastboot["results"]),
@@ -136,14 +153,18 @@ def main() -> int:
     bundle = out / "software"
     bundle.mkdir(exist_ok=True)
     for src, name in [(out / "linux/kernel.efi", "kernel.efi"),
-                      (out / "linux/initramfs-repaired.cpio", "initramfs.cpio"),
+                      (out / "native-init/initramfs-native.cpio", "initramfs.cpio"),
                       (out / "dtb/patched.dtb", "board.dtb")]:
         shutil.copyfile(src, bundle / name)
     manifest = {"source_boot_image_sha256": sha(boot),
-                "scope": "kernel and repaired initramfs tested on QEMU virt; LG hardware and ABL unvalidated",
+                "scope": "kernel and native diagnostic shell tested through standard UEFI on QEMU virt; LG hardware and ABL unvalidated",
+                "dtb_scope": "LG fixed reservation/board/PSCI/USB contract validated statically; not executed on QEMU virt",
                 "simulation_harness_included": False,
                 "files": {name: sha(bundle / name) for name in ("kernel.efi", "initramfs.cpio", "board.dtb")},
-                "correction": linux["correction"]}
+                "base_initramfs_repair": linux["correction"],
+                "native_init_sha256": native["native_init_sha256"],
+                "native_initramfs_sha256": native["native_initramfs_sha256"],
+                "authentication": "no password; local USB/console diagnostic root shell; no network services"}
     (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     phone_cmdline = ("acpi=off rdinit=/init loglevel=8 ignore_loglevel panic=0 maxcpus=1 "
                      "clk_ignore_unused pd_ignore_unused regulator_ignore_unused "

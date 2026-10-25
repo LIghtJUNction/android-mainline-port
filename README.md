@@ -4,6 +4,13 @@
 
 经验来自三台高通平板从零到公开发布的完整移植（主线内核 6.17 到 7.2，Ubuntu 26.04 + GNOME）。目标只有一个：从头再移植一台设备时，效率最高、少走弯路。
 
+## 本 fork 的 LG G8 实验
+
+[板级源码](devices/lg-alphalm/README.md)、[本机模拟与复现](tools/lg-g8/local-sim/README.md)、
+[二进制导出损坏的纠错](docs/lg-g8-omarchy/EXPORT-REPAIR.md)已整理进仓库。
+目前已在 QEMU 中验证 Linux 7.3、标准 UEFI Shell、外部设备树加载和可重连的 USB 诊断 shell；
+LG 设备树的内存保留区也已静态校准。G8 真机、显示、触控和 Omarchy 尚未完成验收。
+
 ## 来自这些移植项目
 
 | 设备 | SoC | 项目 |

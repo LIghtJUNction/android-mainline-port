@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/LIghtJUNction/mu_aloha_platforms.git",
+  "commit": "db0665f48f2c239eeebc045d7e14b5de520bb161",
+  "scope": "five existing LG G8 diagnostic source changes, no firmware binaries",
+  "patch_sha256": "616042875ef1849fb1ed2237c202d40c27994955cca998954759098699a68dd2",
+  "exact_reconstruction_of_current_five_files": true
+}

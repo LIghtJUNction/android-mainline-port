@@ -1,0 +1,9 @@
+#!/bin/sh
+export PATH=/bin:/sbin HOME=/root USER=root LOGNAME=root
+export TERM=${TERM:-vt100}
+export PS1='lgg8# '
+unset ENV BASH_ENV
+cd /root || cd /
+printf '\nLGG8-DIAGNOSTIC-SESSION pid=%s\n' "$$"
+printf 'Unauthenticated local root shell. Type exit to restart the session.\n'
+exec /bin/sh -i

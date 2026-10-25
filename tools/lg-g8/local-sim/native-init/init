@@ -1,0 +1,83 @@
+#!/bin/sh
+# Minimal local diagnostic environment; no network daemons or passwords.
+export PATH=/bin:/sbin
+BB=/bin/busybox
+
+$BB mount -t devtmpfs -o mode=0755 devtmpfs /dev 2>/dev/null || true
+$BB mkdir -p /proc /sys /run /tmp /root /dev/pts /sys/kernel/config
+$BB mount -t proc -o nosuid,nodev,noexec proc /proc 2>/dev/null || true
+$BB mount -t sysfs -o nosuid,nodev,noexec sysfs /sys 2>/dev/null || true
+$BB mount -t devpts -o gid=5,mode=620 devpts /dev/pts 2>/dev/null || true
+$BB mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run 2>/dev/null || true
+$BB mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp 2>/dev/null || true
+$BB mount -t configfs -o nosuid,nodev,noexec configfs /sys/kernel/config 2>/dev/null || true
+exec </dev/console >/dev/console 2>&1
+
+log() { echo "LGG8-NATIVE: $*"; echo "LGG8-NATIVE: $*" >/dev/kmsg 2>/dev/null || true; }
+trap ':' INT TERM HUP
+log 'INIT pid=1; unauthenticated local diagnostic shells only'
+
+shell_loop() {
+    port=$1
+    wait_option=
+    case "$port" in ttyGS*) wait_option=-w ;; esac
+    while :; do
+        if [ -c "/dev/$port" ]; then
+            $BB getty $wait_option -L -n -i -l /bin/diag-login 115200 "$port" vt100
+        fi
+        $BB sleep 1
+    done
+}
+
+usb_loop() {
+    gadget=/sys/kernel/config/usb_gadget/lgg8
+    if [ ! -d /sys/kernel/config/usb_gadget ]; then
+        log 'USB configfs unavailable; console shell remains available'
+        return
+    fi
+    $BB mkdir -p "$gadget/strings/0x409" "$gadget/configs/c.1/strings/0x409" \
+        "$gadget/functions/acm.usb0" || return
+    echo 0x18d1 >"$gadget/idVendor"
+    echo 0x4ee7 >"$gadget/idProduct"
+    echo lgg8-native-diagnostic >"$gadget/strings/0x409/serialnumber"
+    echo LG-G8 >"$gadget/strings/0x409/manufacturer"
+    echo Linux-diagnostic-shell >"$gadget/strings/0x409/product"
+    echo serial >"$gadget/configs/c.1/strings/0x409/configuration"
+    echo 120 >"$gadget/configs/c.1/MaxPower"
+    [ -e "$gadget/configs/c.1/acm.usb0" ] || \
+        $BB ln -s "$gadget/functions/acm.usb0" "$gadget/configs/c.1/acm.usb0"
+    while :; do
+        bound=$($BB cat "$gadget/UDC" 2>/dev/null)
+        if [ -z "$bound" ]; then
+            for path in /sys/class/udc/*; do
+                [ -e "$path" ] || continue
+                udc=${path##*/}
+                if echo "$udc" >"$gadget/UDC" 2>/dev/null; then
+                    log "USB bound to $udc"
+                    break
+                fi
+            done
+        fi
+        if [ -c /dev/ttyGS0 ]; then
+            shell_loop ttyGS0
+        fi
+        $BB sleep 1
+    done
+}
+
+# Open each active hardware console through getty, which creates its own
+# controlling terminal. Never compete with the dedicated USB shell loop.
+consoles=$($BB cat /sys/class/tty/console/active 2>/dev/null)
+[ -n "$consoles" ] || consoles=console
+for port in $consoles; do
+    case "$port" in
+        ttyGS*) continue ;;
+        tty0) port=tty1 ;;
+    esac
+    shell_loop "$port" &
+done
+usb_loop &
+while :; do
+    wait
+    $BB sleep 1
+done

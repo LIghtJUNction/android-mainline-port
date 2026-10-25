@@ -31,10 +31,15 @@ USB 测试只编译两个外部模块，并核对原有 Image 和 `.config` 的�
 原包在模拟器中报 `Failed to execute /init (error -2)`，随后 `No working init found`。
 内核已经进入了 Linux；不能把这种故障当作内核没有执行。
 
-修复包加入匹配的 ARM64 musl 库和早期控制台设备节点，保留原来的 `/init` 和 BusyBox。
-测试包另外加入检查脚本；检查脚本最终仍让原 `/init` 成为 PID 1。
+基线修复包加入匹配的 ARM64 musl 库和早期控制台设备节点，保留原来的 `/init` 和 BusyBox。
+基线测试包另外加入检查脚本；检查脚本最终仍让原 `/init` 成为 PID 1。
 虚拟 USB 变体再加入 `dummy_hcd` 和 `cdc-acm`，让 Linux 真实的主机、设备和 ACM 驱动完成双向字节传输。
 这两个模块和检查脚本不会进入导出的干净运行包。
+
+原来的 `/init` 只建立 USB 接口，然后一直 sleep，无法提供终端。
+最终导出的运行包改用 [native-init](native-init/README.md)：为 USB 和控制台提供无密码本地诊断 shell，
+退出后重建会话，不启动网络服务。测试会真正关闭、重开虚拟串口，再检查第二个 shell 能读到第一会话写入的文件。
+命令的计算结果不出现在发送文本中，避免把终端回显当作执行成功。
 
 原始 Android 镜像 SHA-256：
 
@@ -57,10 +62,13 @@ bb475e12ce81e2e599a643317d50b0a8603d1eec573ca41be09fa029307163a7
 | 标准 UEFI 启动 | QEMU EDK2 从虚拟 FAT/ESP 加载小型标准 EFI 程序，由它调用内核 EFI stub；原 `/init` 运行 |
 | UEFI + 虚拟 USB | 同上，加上内核虚拟 USB 控制器；检查 ACM 枚举和两方向内容相同的传输 |
 | 固件自带标准 Shell | 直接使用板级构建的同一份 Shell.efi，通过同目录 startup.nsh 启动内核；检查原 `/init`、UEFI 和虚拟 USB 双向收发 |
+| 外部 DTB 交接 | 标准 Shell 启动同一内核，EFI stub 读取匹配 QEMU 的外部 DTB；运行中内核的 model 必须为该文件独有标记 |
+| 可交互诊断 shell | 标准 Shell、外部 QEMU DTB、新 `/init` 和 getty 一起运行；通过 USB 执行 UID/架构/算术/文件命令，退出、关闭重开串口后再次执行并确认会话 PID 改变 |
 | LG 板级设备树 | 应用真实板级补丁并编译，要求全部 runtime 固定保留内存被覆盖、无候选重叠、三段 RAM/板号/PSCI/USB 和 cmd-db 匹配 |
 | 导出修复回归 | 5 项本机测试，覆盖原生 CR/LF 的保留、拒绝部分转换和坏 FDT、重复运行及拒绝覆盖不同输出 |
 | BootShim | Unicorn 执行两个实际 UEFI 镜像里的 112 字节跳板，20 次检查 3 MiB 搬运、跳转和寄存器；12 项坏输入由主机预检拒绝 |
 | UEFI fastboot | 原 C 控制流加 EFI/USB 边界替身，31 项预期结果；包括正常结果和故障复现 |
+| 标准 ESP profile | 真实 EDK2 parser/Clang 验证三个实验宏关闭、默认诊断 profile 不变；另从实际压缩 FD 解出 FFS 核对标准 BDS 的打包情况 |
 
 BootShim 检查停在 UEFI 的第一条指令前。QEMU 使用通用 `virt` 主板和 QEMU 的 EDK2，
 不是 LG 的 ABL、设备树或那份板级 UEFI。标准 Shell 二进制相同，固件本身不同。
@@ -78,11 +86,14 @@ QEMU 没有 LG G8/SM8150 主板模型，不能验证它的内存保留区、显�
 - `software/kernel.efi`、`software/initramfs.cpio`、`software/board.dtb`、`software/manifest.json`：同一内核、修复后的干净运行包和校准后的 LG 板树。
 - `phone-probe-esp/`：上述文件加标准 Shell 和手机参数的 startup.nsh；这是待设备验收的诊断 ESP 文件夹。
 - `dtb/report.json`：手机板树的独立静态检查结果；没有把它放到不匹配的 QEMU virt 主板上运行。
+- `external-dtb/report.json`：外部 DTB 加载机制；其中生成的是 QEMU DTB，不能装到手机。
+- `native-init/report.json`、`native-init/qemu.log`：真正的 USB shell 命令、会话 PID 和重连结果。
+- `uefi-profile/report.json`、`uefi-profile/bds-audit.json`：构建分支和实际 FD 打包证据。
 - `bootshim/report.json`：逐个镜像、DTB 和搬运路径的结果。
 - `fastboot/results.json`：31 个用例的结果，旁边保留各项日志和源码 manifest。
 
 `software/` 和 `phone-probe-esp/` 没有模拟脚本或虚拟 USB 模块，也没有完整发行版根文件系统。
-它们不是可直接刷入手机的分区镜像。手机固件目前还有强制 fastboot 的实验开关，
+它们不是可直接刷入手机的分区镜像。当前板级固件构建配置还有强制 fastboot 的实验开关，
 且内置 DTB 是占位文件；必须使用校准后的外部板树，并满足 EFI stub 对 `dtb=` 的加载条件。
 Android header 在这里仅用于提取内核和 initramfs，
 未在 QEMU 中执行 LG ABL 对 header 和加载地址的处理。
@@ -93,6 +104,10 @@ Android header 在这里仅用于提取内核和 initramfs，
 Linux 的 `initrd=` 和 `dtb=` 使用 ESP 根目录起始的 EFI 路径。
 外部 DTB 会替代固件提供的树，且受 Secure Boot 状态限制；这些机制见
 [EFI stub 文档](https://docs.kernel.org/admin-guide/efi-stub.html)。
+
+恢复既有 BDS/Shell/ESP 路由的补丁和本机分支验证见 [uefi-profile](uefi-profile/README.md)。
+现成的 `SurfaceDuo1NoSb.dsc` 可配合该 profile，但已有 PK、BootOrder/BootNext 和真实硬件状态仍需区分；
+本工具没有读写它们，也没有全量重编或启动 LG 板级固件。
 
 各部分也能单独运行，参见 [BootShim](bootshim/README.md)、[fastboot](fastboot/README.md)
 和 `run_linux.py --help`。单次虚拟启动通常几秒到十几秒；整套耗时受模块准备、缓存和本机负载影响。

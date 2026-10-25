@@ -1,0 +1,106 @@
+diff --git c/Platforms/AndromedaPkg/Andromeda.dsc.inc w/Platforms/AndromedaPkg/Andromeda.dsc.inc
+index 0e8e2229..e7d3b0c1 100644
+--- c/Platforms/AndromedaPkg/Andromeda.dsc.inc
++++ w/Platforms/AndromedaPkg/Andromeda.dsc.inc
+@@ -658,7 +658,7 @@
+ [BuildOptions]
+   *_CLANGPDB_AARCH64_CC_FLAGS = -Wno-unused-const-variable -Wno-sometimes-uninitialized -Wno-unaligned-access -D CLANG -Wno-ignored-pragma-optimize
+   *_*_*_CC_FLAGS = -DSECURE_BOOT=$(SECURE_BOOT) -DUSE_MEMORY_FOR_SERIAL_OUTPUT=$(USE_MEMORY_FOR_SERIAL_OUTPUT) -DUSE_SCREEN_FOR_SERIAL_OUTPUT=$(USE_SCREEN_FOR_SERIAL_OUTPUT) -DPLATFORM_HAS_ACTLR_EL1_UNIMPLEMENTED_ERRATA=$(PLATFORM_HAS_ACTLR_EL1_UNIMPLEMENTED_ERRATA) -DPLATFORM_HAS_AMCNTENSET0_EL0_UNIMPLEMENTED_ERRATA=$(PLATFORM_HAS_AMCNTENSET0_EL0_UNIMPLEMENTED_ERRATA) -DPLATFORM_HAS_GIC_V3_WITHOUT_IRM_FLAG_SUPPORT_ERRATA=$(PLATFORM_HAS_GIC_V3_WITHOUT_IRM_FLAG_SUPPORT_ERRATA) -DPLATFORM_HAS_PSCI_MEMPROTECT_FAILING_ERRATA=$(PLATFORM_HAS_PSCI_MEMPROTECT_FAILING_ERRATA) -D __DEPRECATED_AARCH64_4K_RUNTIME_GRANULARITY
+-  *_*_*_CC_FLAGS = -DZ_SOLO -DPRODUCT_NAME=\"Andromeda\" -DINIT_BIN=\"/init\" -DENABLE_UPDATE_PARTITIONS_CMDS -DENABLE_BOOT_CMD -DENABLE_DEVICE_CRITICAL_LOCK_UNLOCK_CMDS -DUSERDATA_FS_TYPE=\"ext4\"
++  *_*_*_CC_FLAGS = -DZ_SOLO -DPRODUCT_NAME=\"Andromeda\" -DINIT_BIN=\"/init\" -DENABLE_UPDATE_PARTITIONS_CMDS -DENABLE_BOOT_CMD -DENABLE_DEVICE_CRITICAL_LOCK_UNLOCK_CMDS -DLG_ALPHA_BDS_LINUXLOADER -DLG_ALPHA_FORCE_UEFI_FASTBOOT -DLG_ALPHA_FORCE_UEFI_FASTBOOT_EARLY -DUSERDATA_FS_TYPE=\"ext4\"
+ 
+ [BuildOptions.common.EDKII.SEC,BuildOptions.common.EDKII.MM_CORE_STANDALONE]
+   GCC:*_GCC*_*_DLINK_FLAGS = -z common-page-size=0x1000
+diff --git c/Platforms/AndromedaPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c w/Platforms/AndromedaPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c
+index f3c97ec4..c5582f13 100644
+--- c/Platforms/AndromedaPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c
++++ w/Platforms/AndromedaPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c
+@@ -32,6 +32,13 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define MS_PXE_BOOT       L"PXE Network"
+ #define MS_PXE_BOOT_PARM  "PXE"
+ 
++#ifdef LG_ALPHA_BDS_LINUXLOADER
++STATIC EFI_GUID  mLinuxLoaderFileGuid = {
++  0xf536d559, 0x459f, 0x48fa,
++  { 0x8b, 0xbc, 0x43, 0xb5, 0x54, 0xec, 0xae, 0x8d }
++};
++#endif
++
+ typedef struct {
+   MEDIA_FW_VOL_DEVICE_PATH    FvDevPath;
+   EFI_DEVICE_PATH_PROTOCOL    EndDevPath;
+@@ -523,6 +530,10 @@ MsBootOptionsLibRegisterDefaultBootOptions (
+ {
+   DEBUG ((DEBUG_INFO, "%a\n", __FUNCTION__));
+ 
++#ifdef LG_ALPHA_BDS_LINUXLOADER
++  // Put LinuxLoader first in the actual BootOrder registration path used by BdsDxe.
++  RegisterFvBootOption (&mLinuxLoaderFileGuid, L"LinuxLoader", 0, LOAD_OPTION_ACTIVE, NULL, 0);
++#endif
+   RegisterFvBootOption (&gMsBootPolicyFileGuid, MS_SDD_BOOT, (UINTN)-1, LOAD_OPTION_ACTIVE, (UINT8 *)MS_SDD_BOOT_PARM, sizeof (MS_SDD_BOOT_PARM));
+   RegisterFvBootOption (&gMsBootPolicyFileGuid, MS_USB_BOOT, (UINTN)-1, LOAD_OPTION_ACTIVE, (UINT8 *)MS_USB_BOOT_PARM, sizeof (MS_USB_BOOT_PARM));
+   RegisterFvBootOption (&gMsBootPolicyFileGuid, MS_PXE_BOOT, (UINTN)-1, LOAD_OPTION_ACTIVE, (UINT8 *)MS_PXE_BOOT_PARM, sizeof (MS_PXE_BOOT_PARM));
+diff --git c/Platforms/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c w/Platforms/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c
+index e271b2f3..3f936c11 100644
+--- c/Platforms/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c
++++ w/Platforms/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c
+@@ -194,6 +194,17 @@ LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+ 
+   BootStatsSetTimeStamp (BS_BL_START);
+ 
++#ifdef LG_ALPHA_FORCE_UEFI_FASTBOOT_EARLY
++  // Start UEFI fastboot only after the loader's basic stack/runtime setup,
++  // but before storage, partition or board probing can abort the app.
++  DEBUG ((EFI_D_INFO, "LG alpha fastboot after stack setup\n"));
++  Status = FastbootInitialize ();
++  if (EFI_ERROR (Status)) {
++    DEBUG ((EFI_D_ERROR, "FastbootInitialize after stack setup failed: %r\n", Status));
++  }
++  goto stack_guard_update_default;
++#endif
++
+   // Initialize verified boot & Read Device Info
+   Status = DeviceInfoInit ();
+   if (Status != EFI_SUCCESS) {
+@@ -296,6 +307,13 @@ LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+     return Status;
+   }
+ 
++#ifdef LG_ALPHA_FORCE_UEFI_FASTBOOT
++  // BoardInit has completed, so the UEFI fastboot USB protocol and board data
++  // have their normal prerequisites.  Keep the host-provided image in the
++  // UEFI fastboot path instead of loading the Android boot partition.
++  BootIntoFastboot = TRUE;
++#endif
++
+   DEBUG ((EFI_D_INFO, "KeyPress:%u, BootReason:%u\n", KeyPressed, BootReason));
+   DEBUG ((EFI_D_INFO, "Fastboot=%d, Recovery:%d\n",
+                                           BootIntoFastboot, BootIntoRecovery));
+diff --git c/Platforms/QcomModulePkg/QcomModulePkg.dsc w/Platforms/QcomModulePkg/QcomModulePkg.dsc
+index 2dffc563..f8592c5e 100644
+--- c/Platforms/QcomModulePkg/QcomModulePkg.dsc
++++ w/Platforms/QcomModulePkg/QcomModulePkg.dsc
+@@ -111,7 +111,9 @@
+   !if $(VERITY_LE)
+       *_*_*_CC_FLAGS = -DVERITY_LE
+   !endif
+-  !if $(USER_BUILD_VARIANT) == 0
++  # LG G8 bring-up: expose the RAM-only UEFI fastboot "boot" command so
++  # Linux boot images can be tested without writing an Android partition.
++  !if 1
+       *_*_*_CC_FLAGS = -DENABLE_UPDATE_PARTITIONS_CMDS -DENABLE_BOOT_CMD -DENABLE_DEVICE_CRITICAL_LOCK_UNLOCK_CMDS
+   !else
+       *_*_*_CC_FLAGS = -DUSER_BUILD_VARIANT
+diff --git c/Platforms/SurfaceDuo1Pkg/Device/lg-alpha/DXE.inc w/Platforms/SurfaceDuo1Pkg/Device/lg-alpha/DXE.inc
+index d5e9622d..7c98be20 100644
+--- c/Platforms/SurfaceDuo1Pkg/Device/lg-alpha/DXE.inc
++++ w/Platforms/SurfaceDuo1Pkg/Device/lg-alpha/DXE.inc
+@@ -97,7 +97,7 @@ INF SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Application/QcomChar
+ INF SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ButtonsDxe/ButtonsDxe.inf
+ INF SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/HALIOMMUDxe/HALIOMMUDxe.inf
+ INF SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UFSDxe/UFSDxe.inf
+-INF QcomPkg/PatchedBinaries/UsbConfigDxe.inf
++INF SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbConfigDxe/UsbConfigDxe.inf
+ 
+ # DXE without depex
+ FILE DRIVER = 6b38f7b4-ad98-40e9-9093-aca2b5a253c4 {

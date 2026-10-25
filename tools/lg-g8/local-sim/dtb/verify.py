@@ -14,6 +14,7 @@ import subprocess
 
 HERE = Path(__file__).resolve().parent
 BOARD = Path("arch/arm64/boot/dts/qcom/sm8150-lg-alphalm-board.dts")
+PORT_DTS = HERE.parents[3] / "devices/lg-alphalm/sm8150-lg-alphalm-board.dts"
 
 
 def sha(path: Path) -> str:
@@ -167,6 +168,7 @@ def main() -> int:
     usb2 = "/soc@0/usb@a8f8800"
     checks = {
         "external_source_unchanged": before_sha == sha(source / BOARD),
+        "repository_device_source_matches_patch": (work / BOARD).read_bytes() == PORT_DTS.read_bytes(),
         "board_id_matches_runtime": after["/"]["qcom,board-id"] == runtime["/"]["qcom,board-id"],
         "memory_ranges_match_runtime": memory(after) == memory(runtime),
         "all_runtime_fixed_reservations_covered": not missing(runtime_ranges, after_ranges),
@@ -182,6 +184,7 @@ def main() -> int:
     report = {
         "scope": "static DTB grammar and runtime RAM/firmware reservation contract; no device or hardware execution",
         "inputs": {"source": str(source / BOARD), "source_sha256": before_sha,
+                   "repository_device_source": str(PORT_DTS), "repository_device_source_sha256": sha(PORT_DTS),
                    "runtime": str(args.runtime.resolve()), "runtime_sha256": sha(args.runtime),
                    "patch_sha256": sha(HERE / "align-alphalm-runtime.patch")},
         "before_sha256": sha(baseline), "patched_sha256": sha(patched),
