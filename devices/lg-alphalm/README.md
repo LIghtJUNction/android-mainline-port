@@ -52,3 +52,6 @@ dtc -I dts -O dtb -o out/lg-alphalm/board.dtb out/lg-alphalm/board.preprocessed.
 将其与同一份内核、可交互的诊断 initramfs 和标准 UEFI Shell 组成 `out/local-sim/phone-probe-esp/`。
 该目录是未安装到设备的诊断 ESP 文件夹，不是分区镜像或完整发行版。
 真实板级 UEFI、Secure Boot/BootOrder、PHY、供电与外设仍有待验证。
+
+本轮 OpenAI 云端的实际编译、QEMU USB shell 验证、产物哈希与交付状态见
+[CLOUD-VALIDATION.md](CLOUD-VALIDATION.md)。
