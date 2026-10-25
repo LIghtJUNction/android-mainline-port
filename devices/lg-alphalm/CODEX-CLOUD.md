@@ -22,7 +22,7 @@
    不能将本机 Image 的旧 SHA-256 冒充本轮云端产物的哈希。
 4. 用 `tools/lg-g8/local-sim/build_usb_modules.py` 为本轮内核编译匹配的 dummy_hcd/cdc-acm。
 5. 从官方 Alpine ARM64 minirootfs 构建最小干净 cpio，保留 BusyBox、匹配的 musl 库、必要目录及 applet 链接。
-   不需要原手机 ramdisk。`native-init/verify.py` 会加入真正的诊断 `/init` 与 diag-login。
+   不需要原手机 ramdisk，也不需要原有 `/init`。`native-init/verify.py` 会加入真正的诊断 `/init` 与 diag-login。
 6. 固件源码见本目录 `uefi/source.json`。在指定 commit 上初始化需要的公开子模块，
    先应用 `uefi/diagnostic-baseline.patch`，再应用 `tools/lg-g8/local-sim/uefi-profile/standard-esp.patch`。
    前一个补丁已在临时副本上验证能逐字节重建本机的五个源文件。
@@ -31,6 +31,8 @@
 7. 在云端安装 QEMU AArch64 和相应 EDK2/QEMU 固件。用新编译的内核、模块和同一 Shell 跑实际模拟：
    标准 Shell → EFI stub → 匹配 QEMU virt 的外部 DTB → `/init` → USB shell。
    可用 `native-init/verify.py --shell ... --firmware ... --qemu-dtb ...`；
+   同时显式传入本轮的 `--kernel`、`--initramfs`、`--usb-module-dir` 和 `--out`。
+   不调用依赖历史本机镜像和备份的 `run_all.py`。
    外部 QEMU DTB 按 `verify_external_dtb.py` 的 dumpdtb 参数生成并设置相同 model 标记。
    不得把 LG 的 DTB 放进 QEMU virt 来冒充设备仿真。
 8. 实际执行 UID/架构/算术/文件读写，退出并重开串口，保留不同会话 PID、原始日志和逐项结果。

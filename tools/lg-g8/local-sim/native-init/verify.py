@@ -161,7 +161,8 @@ def main() -> int:
     entries = sim.read_cpio(original)
     if any(name.startswith("sim") or name.endswith(".ko") for name in entries):
         raise ValueError("input must be a clean runtime archive without a simulation harness")
-    original_init_sha = sim.digest(entries["init"][1])
+    original_init = entries.get("init")
+    original_init_sha = sim.digest(original_init[1]) if original_init else None
     original_busybox = entries["bin/busybox"]
     interpreter = sim.interpreter(original_busybox[1])
     if interpreter and interpreter.lstrip("/") not in entries:
