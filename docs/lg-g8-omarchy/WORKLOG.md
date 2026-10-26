@@ -2,6 +2,16 @@
 
 按结论变化记录，当前验收与下一项设备实验以 [STATUS.md](STATUS.md#当前验收与下一步) 为准。原始设备资料留在私有工作区，不提交。
 
+## 2026-10-27：真机快照运行测试与 init/APEX 补采
+
+已在 LG G8 当前 Android 14 的 Magisk root 域首次执行已有正式 pstore 快照产物，未重建 helper。执行前只读确认 model/device、槽 b、启动完成、root、内核、修复 marker 与 boot_b 哈希，并校验本机有效恢复备份。最初 adb push 因 root 的 0700 目录拒绝 shell 写入而失败，helper 尚未执行；保留失败记录后改用 root 标准输入传输，哈希一致后首次执行。helper 退出 0，status/manifest 完整，pstorefs 枚举为 0 条，四份回收文件的长度、SHA-256 和权限核对通过，boot_id 未变；校验后清理并确认该 nonce 的远端临时文件已移除。
+
+该结果建立当前 Android/Magisk 环境下的空快照运行能力，不能推断非空记录复制、早期 init 域权限、启动顺序、跨 reboot 保留或 console/EP2 恢复。API 37 CRT note 未阻止本次产物执行，但不因此声明通用最低系统版本。没有部署 init、写 pmsg、重启或生成新启动镜像。
+
+另只读检查七个遗漏 import 和当前 APEX 顶层 rc，共 23 个目标：17 个成功文件（16 个 APEX 路径及 boringssl_self_test 规则），其余六个原遗漏 import 当前 MISSING。成功文件长度与前后哈希核对通过，采集前后为同次启动；当前路径缺失不证明更早启动时缺失。更早 ueventd、bootstrap APEX 配置及原生服务的副作用仍未排除。并行重跑 boot 31 项和 hardware 16 项本机测试，47 项全部通过，未运行 CI。
+
+私有证据为主工作区 `private/runtime-test-preflight-20261027-1/`、`private/pstore-runtime-smoke-20261027-f1e537a0a46e2529/`、`private/android-init-gaps-20261027-readonly-1/` 与 `private/contract-regression-20261027-1/`；原始日志和设备信息不提交。详情及报告指纹见 [读回记录](PMSG-CALIBRATION.md#私有证据)。下一步核对 bootstrap 时的规则集合和 helper 早期路径/标签/域权限，再形成同步观测的具体修改材料；主线 Linux/Omarchy 仍未在手机验收。
+
 ## 2026-10-27：完成 boot 内存与硬件离线契约实施及独立复审
 
 完成 [boot 内存契约](../../tools/lg-g8/BOOT-CONTRACT.md) 和 [USB、DMA 与显示契约](../../tools/lg-g8/HARDWARE-CONTRACT.md) 的本机实施、独立复审及真实输入复跑。复审补齐输入和内核语义边界后，最终分别为 31 项与 16 项测试全部通过；这些是工具的本机验证结果，不是启动或硬件验收。boot 工具对不支持或歧义输入拒绝推断，硬件工具对配置、命令行及保留区证据不足保留 unknown；报告独占创建并记录输入指纹。

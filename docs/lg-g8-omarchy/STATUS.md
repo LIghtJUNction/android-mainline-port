@@ -34,9 +34,9 @@
 
 已只读采集并校验实际 `services.jar`、init 规则、`logcat`、`logd` 和 `liblog.so` 共七个文件。BootReceiver 已查归档路径没有直接删除源文件；原生普通 pmsg 读取没有发现直接删除，`logcat -L -c` 则有明确 pstore unlink 分支。后续采集核实 logcatd wrapper 不添加 `-c`，服务和 clear action 不能拼成该删除调用；当前属性仍不证明校准启动时的执行及删除结果。init 范围扩展到 179 个文件、171 个 rc，长度/摘要复核通过，但另有七个未采 import、APEX 顶层 rc 及更早服务/脚本缺口，不能排除其他清理。pstore mount 与首次 `start logd` 属于同一 `on init`，mount 在前，但尚不能声称早于全部消费者。
 
-挂载后同步快照 [helper](../../tools/lg-g8/PSTORE-SNAPSHOT.md) 已实现，13 项主机边界测试通过，修复了短写后保存字节计数与摘要错误；NDK r30 静态 AArch64 构建通过。API 37 note 来自预编译启动对象，API 34 目标不保证 Android 14 运行兼容；未在手机执行或部署。完整采集须结合退出码、状态/manifest 和回收校验；默认 5 秒仅为 fork 后监督预算，不能作为整个步骤的严格期限。
+挂载后同步快照 [helper](../../tools/lg-g8/PSTORE-SNAPSHOT.md) 已实现，13 项主机边界测试通过，修复了短写后保存字节计数与摘要错误；NDK r30 静态 AArch64 构建通过。2026-10-27 已在当前 LG G8 Android 14 的 Magisk root 域执行一次：退出 0，状态与 manifest 完整，pstorefs 枚举为 0 条，四个输出文件的长度、摘要与权限回收校验通过，同次启动身份一致，设备端临时文件已清理。最初 adb push 因 root 的 0700 目录拒绝 shell 写入而失败，helper 尚未执行；改用 root 标准输入传输并核对哈希后才首次执行。API 37 note 未阻止这份产物的当前空快照路径，不证明通用最低版本、非空记录复制或早期 init 域兼容；未部署 init。完整采集须结合退出码、状态/manifest 和回收校验；默认 5 秒仅为 fork 后监督预算，不能作为整个步骤的严格期限。
 
-下一步补齐未采 init/APEX 规则、更早服务/脚本及触发条件，核对 PATH、早期快照 helper 的 Android 运行兼容性、执行位置/标签、运行权限和暂存生命周期，形成可审查的启动修改与单次实验材料；不重跑同一校准。当前阻塞是日志读回链路尚未建立，现有证据不足以定位内容首次丢失的位置。实验身份、结果及边界见 [校准记录](PMSG-CALIBRATION.md)。console 保留/读回、裸探针 PSCI reset 和抵达 reset 前挂死的恢复仍需分别验证，尚不能启动无人值守的新镜像迭代。尚不生成或发送新的设备启动镜像。已失败候选 `lg-native-3` 的 SHA-256 为 `b183fe857ee8e933272dad01cbd5199fc4bc6b303adc11a37c7b0fe3c23b3b78`，只做过 RAM 启动，不能原样重试。
+本轮只读补采已检查七个遗漏 import：boringssl_self_test 的目标存在并取回，其余六个在当前系统中为 MISSING；另取回 16 份 APEX 顶层 rc，共 23 个目标、17 个成功文件、6 个 MISSING，长度/摘要核对通过且采集前后为同次启动。当前不存在不等于更早启动不存在。下一步核对新规则、bootstrap APEX 规则集合、更早服务/脚本及触发条件，核对 PATH、早期快照 helper 的执行位置/标签、域权限和暂存生命周期，形成可审查的启动修改与单次实验材料；不重跑同一校准。当前阻塞是日志读回链路尚未建立，现有证据不足以定位内容首次丢失的位置。实验身份、结果及边界见 [校准记录](PMSG-CALIBRATION.md)。console 保留/读回、裸探针 PSCI reset 和抵达 reset 前挂死的恢复仍需分别验证，尚不能启动无人值守的新镜像迭代。尚不生成或发送新的设备启动镜像。已失败候选 `lg-native-3` 的 SHA-256 为 `b183fe857ee8e933272dad01cbd5199fc4bc6b303adc11a37c7b0fe3c23b3b78`，只做过 RAM 启动，不能原样重试。
 
 公开移植调查已形成 [固定来源对照](MAINLINE-PORTING-RESEARCH.md)：Hotdog 的 ABL 直接启动和 USB SMMU 调试、OnePlus 7 Pro 的 Arch/Hyprland 手机交互层，以及上游与 LG downstream 资料。随后已完成 [boot 内存离线审计](../../tools/lg-g8/BOOT-CONTRACT.md) 与 [USB、DMA、显示离线审计](../../tools/lg-g8/HARDWARE-CONTRACT.md)，两路均完成独立复审，本机最终分别 31 项、16 项测试通过，真实输入已用修正后的工具重跑。外部作者的硬件记录仍不计入 G8 验收，不照搬板级地址或关闭 watchdog。
 
@@ -53,6 +53,8 @@ USB 审计确认两树 USB1 SID/mask 同为 `0x140/0`；运行树连接在 wrapp
 私有证据根目录为主工作区的 `audit/`：`reboot-route-20261026/laf-kernel-ramtest-184155/`、`reboot-route-20261026/persistent-fix-184517/`、`runtime-native-handoff-20261026-172439/`、`persistent-reboot-acceptance-20261026/`。最新往返的逐命令退出码、协议返回、耗时和 Android 前后检查保存在独立目录 `persistent-reboot-recheck-20261026T211204+0800/result.json`；旧验收结果未覆盖。该 JSON 未记录源码 HEAD，提交关联由同次工作树检查与本段记录补充，私有 `context.md` 说明证据范围。本地修复报告仍为 `out/reboot-fix/acceptance-rebuild-20261026/` 和 `out/reboot-fix/acceptance-cpu-20261026.json`。
 
 本次 pmsg 证据为主工作区 `audit/pmsg-calibration-20261026-once-1/`（目录名沿用预先指定日期，实际执行为 2026-10-27）、`private/pmsg-calibration-20261027-once-1/`、`private/pmsg-readback-diagnosis-20261027-once-1/`、`private/android-pstore-consumers-20261027-readonly-1/` 和 `private/android-init-scope-20261027-readonly-1/`；包含敏感原文，不提交。本机验证归档为 `private/pstore-snapshot-20261027-local-1/`，保存原始 13 项成功测试结果、当前源码/产物身份及 NDK 调查材料，52 份文件的内容、长度与权限已核对；本次归档未重跑测试，修复前调查产物单独标明。证据指纹与各自范围见 [校准记录](PMSG-CALIBRATION.md#私有证据)。
+
+本轮新增私有证据为主工作区的 `private/runtime-test-preflight-20261027-1/`、`private/pstore-runtime-smoke-20261027-f1e537a0a46e2529/` 和 `private/android-init-gaps-20261027-readonly-1/`；分别记录恢复/身份核对、一次当前 Android helper 执行，以及遗漏 init/APEX 规则补采。两套审计工具重新执行 47 项测试全部通过，原始日志与源码/测试指纹已校验归档到 `private/contract-regression-20261027-1/`。本轮没有 pmsg 写入、reboot、init 部署或新启动镜像；完整结果和报告指纹见 [校准后续记录](PMSG-CALIBRATION.md#私有证据)。
 
 以下保留 2026-10-25 的历史排查记录。历史的“仅本机”“无分区写入”和设备当时状态只适用于各自时点，不描述当前情况；关于异常 OEM 格式和损坏 runtime carveout 的推论已撤回，不能作为当前决策依据。
 

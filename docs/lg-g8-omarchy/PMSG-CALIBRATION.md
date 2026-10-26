@@ -107,7 +107,11 @@
 - `/vendor/etc/init/init.kinibi.rc`
 - `/vendor/etc/boringssl_self_test.zygote64_32.rc`
 
-这些是未采集，不能标为设备上不存在；其中 `/init.lge.log.rc` 是明确的日志调查缺口。APEX 扫描仅覆盖 `/apex/*/etc/init/`，漏了 `/apex/<name>/etc/*.rc`；部分派生服务定义和厂商脚本实现也未采集。import 属于解析过程，采集编号或文本位置不代表运行顺序；`start`/`exec_background` 不等待，`exec`/`exec_start` 等待。`early-init` 已有 ueventd、apexd-bootstrap、prng_seeder，厂商规则还有其他启动点，不能宣布候选位置早于全部消费者。已采 rc 未见显式 pstore 读删，不排除原生程序行为；当前 mountinfo 也不能证明整个启动期间 `/dev` 的生命周期。
+上述是初次采集时的未采目标。2026-10-27 后续只读补采逐项检查：`/vendor/etc/boringssl_self_test.zygote64_32.rc` 存在并已取回，另外六项在当前系统视图中 `test -e` 为假，记为 MISSING；该检查不区分不存在和悬空链接，也不证明它们在更早启动或校准启动时不存在。同时取回 16 份 APEX 顶层 rc（含带版本号和不带版本号的路径），共 23 个目标、17 个成功文件、6 个 MISSING，全部成功文件字节长度与前后摘要核对通过，采集前后为同次启动。初次 APEX 扫描仅覆盖 `/apex/*/etc/init/`，漏了 `/apex/<name>/etc/*.rc`；当前补采也不能单独证明 bootstrap 时的规则集合，部分派生服务定义和厂商脚本实现仍需核对。import 属于解析过程，采集编号或文本位置不代表运行顺序；`start`/`exec_background` 不等待，`exec`/`exec_start` 等待。`early-init` 已有 ueventd、apexd-bootstrap、prng_seeder，厂商规则还有其他启动点，不能宣布候选位置早于全部消费者。已采 rc 未见显式 pstore 读删，不排除原生程序行为；当前 mountinfo 也不能证明整个启动期间 `/dev` 的生命周期。
+
+新增的 16 个 APEX 路径对应 8 份不同内容，版本路径和无版本路径逐字节一致；已补齐 `art_boot`、`derive_sdk`、`derive_classpath`、`statsd` 定义。新规则无 import，也未发现显式 pstore/ramoops/pmsg/last_kmsg、logcat/logd 调用或删除命令；这不排除其原生程序行为。取回的 BoringSSL 规则在 `early-init` 按 32/64 位 ABI 属性同步执行 vendor 自检，服务以 root 运行并使用 `stdio_to_kmsg`，其二进制行为尚未核对。最早未闭合边界仍在第一/第二阶段 init、ueventd、apexd-bootstrap、`perform_apex_config --bootstrap` 及其他 early-init 程序，早于系统 `on init` 的已知挂载。
+
+候选位置仍是实际系统 init.rc 第 437 行 pstore 挂载后、原第 438 行权限设置前的同步调用。它在同一 action 中先于第 477 行已知 logd 启动，但无法阻止更早异步程序在挂载返回与 helper 开始间访问 pstore，不能称早于全部消费者。现有已采 init ELF、平台/厂商 CIL 与 file_contexts 可继续离线核对解析/入队、bootstrap 筛选、PATH 和 helper 的执行及文件访问权限；无需生成新镜像。
 
 ## 更早只读观测方案（helper 已实现，未部署）
 
@@ -121,7 +125,7 @@
 
 判读边界：早期文件中存在完整新 payload，而稍后源文件消失，可以把变化缩小到两次采集之间，但还需执行证据归因具体消费者；文件存在而 payload 不在，继续查旧记录内容及导出链；挂载成功、完整早期快照为空，只能说明该时点没有可见导出文件，仍不能区分保留、头部识别、旧日志保存、导出失败或更早清理。无论哪一项都不验收 console / EP2 或早期挂死恢复。
 
-[C helper](../../tools/lg-g8/pstore-snapshot.c) 和 [主机边界测试](../../tools/lg-g8/local-sim/tests/test_pstore_snapshot.py) 已实现，13 项本机测试通过，包括输出创建失败、短写、关闭失败和超时；故障注入发现并修复了短写后计数/摘要未对应实际保存内容的问题。NDK r30（30.0.16248370）以 API 34 目标静态构建成功，AArch64 ELF 无 PT_INTERP/PT_DYNAMIC；API 37 note 已追到 NDK 预编译静态启动对象，不能据此或目标 API 数字认定 Android 14 运行兼容性。工具尚未在手机执行，没有部署、构建新启动镜像或新增设备重启。接入前仍需上述启动/权限/生命周期核对、兼容性验证和具体实验材料；此前一次 pmsg 写入/reboot 的授权已经用于原校准。
+[C helper](../../tools/lg-g8/pstore-snapshot.c) 和 [主机边界测试](../../tools/lg-g8/local-sim/tests/test_pstore_snapshot.py) 已实现，13 项本机测试通过，包括输出创建失败、短写、关闭失败和超时；故障注入发现并修复了短写后计数/摘要未对应实际保存内容的问题。NDK r30（30.0.16248370）以 API 34 目标静态构建成功，AArch64 ELF 无 PT_INTERP/PT_DYNAMIC；API 37 note 已追到 NDK 预编译静态启动对象，不能据此或目标 API 数字认定 Android 14 运行兼容性。随后在当前 LG G8 Android 14、Magisk root 域完成一次正式产物运行测试：退出 0，status 和 manifest 完整，正确识别 pstorefs，枚举 0 条记录；四份输出的长度、SHA-256 与 0600 权限核对通过，boot_id 保持一致，设备端临时文件已清理。最初 adb push 因 root 创建的 0700 目录不允许 shell 写入而失败，未执行 helper；改用 root 标准输入传输并核对产物哈希后才首次执行。该结果验证当前环境下的空快照路径，不验证非空记录复制、早期 init 域权限或观测时机。没有部署 init、构建新启动镜像或新增重启。接入前仍需上述启动/权限/生命周期核对和具体实验材料；此前一次 pmsg 写入/reboot 的授权已经用于原校准。
 
 ## 私有证据
 
@@ -135,8 +139,13 @@
 - `private/android-init-scope-20261027-readonly-1/`：179 个成功采集文件（171 个 rc）、实际 logcatd wrapper、身份与启动前后检查；逐文件长度/摘要复核通过，manifest SHA-256 为 `986bc467d0437cbed38fac7d9c5d2ffea42c5d1d3c5d19f4377e795c0c77c5ce`。七个未采 import、APEX 顶层 rc 与厂商脚本缺口仍保留，不能把该集合当作完整启动规则。
 - `private/pstore-snapshot-20261027-local-1/`：保存原始 13 项成功测试结果、对应源码/测试副本、当前静态产物、采集脚本与 NDK/API 调查材料；52 份文件逐项校验内容、长度与 `0600` 权限，目录为 `0700`。`verification.json` 区分原始测试与本次归档检查，未重跑测试；`manifest.json` SHA-256 为 `220ea38574c41b80640520319e00a739c1e01944cec6a3604cedfeb9e7ee6a61`。`build/pstore-snapshot-android-current` 对应修复后源码；`ndk-audit/snapshot` 及其 map 为修复前调查产物，不混作当前构建。代理调查材料的完整保留不代表主线程已逐条独立复审所有反汇编结论，亦不构成 Android 运行验收。
 
+- `private/runtime-test-preflight-20261027-1/`：只读核对真机身份、活动槽位、已安装 boot_b 哈希、传输与恢复备份；未重启或改写分区。
+- `private/pstore-runtime-smoke-20261027-f1e537a0a46e2529/`：保留初始 adb push 失败及首次 helper 执行成功的完整记录。`continuation-result.json` SHA-256 为 `42f5471334379283b70c2db8daf1b6ac08ec432f1d8287523715bfbf6ffa5893`；退出 0、空快照完整、同次启动和远端清理通过。不含早期 init 执行证据。
+- `private/android-init-gaps-20261027-readonly-1/`：七个遗漏 import 和 APEX 顶层规则补采，23 个目标、17 个成功文件、6 个当前 MISSING；`manifest.json` SHA-256 为 `7dde0639a93c920924bd544ba7930f2a99f4a2c45e49e4ecec5094f5314255d9`。
+- `private/contract-regression-20261027-1/`：本轮重新执行的 31 项 boot 与 16 项 hardware 测试日志、源码/测试指纹和退出码，47 项全部通过；归档逐文件核对。
+
 ## 下一步与停止边界
 
-实际 BootReceiver、原生读取/显式删除、logcatd wrapper 和已采集 init 顺序的静态调查已完成上述范围；更早快照 helper 已实现，13 项主机测试和静态交叉构建通过，未在 Android 执行或部署。下一步补齐七个未采 import、APEX 顶层 rc 与更早服务/脚本，核对触发条件、PATH、helper 运行兼容性和权限、暂存生命周期，形成可审查的启动修改与单次实验材料。现有证据仍不能定位首次丢失位置；新增实验须预先记录单一变量、预期、期限和恢复路径。此次一次性校准不自动扩展为第二次写入或 reboot。
+实际 BootReceiver、原生读取/显式删除、logcatd wrapper 和已采集 init 顺序的静态调查已完成上述范围；helper 的 13 项主机测试、静态交叉构建和当前 Android Magisk 域的一次完整空快照已通过，尚未部署早期 init。七个原未采 import 已逐项检查，APEX 顶层 rc 已补采。下一步核对新规则、bootstrap APEX 集合与更早服务/脚本，确认触发条件、PATH、helper 的早期可执行路径/标签/域权限及暂存生命周期，形成可审查的启动修改与单次实验材料。现有证据仍不能定位首次丢失位置；新增实验须预先记录单一变量、预期、期限和恢复路径。此次一次性校准不自动扩展为第二次写入或 reboot。
 
 设备最后一次实测仍为同一轮 reboot 后的 Android，启动完成、root 可用、槽位 b、内核符合预期；没有后台设备实验。console / EP2 读回和抵达 reset 前的挂死恢复仍需独立证据，不发送现有 EP2，也不原样重试失败的 `lg-native-3`。

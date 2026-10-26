@@ -1,6 +1,6 @@
 # 启动期 pstore 只读快照 helper
 
-[pstore-snapshot.c](pstore-snapshot.c) 用于复制内核已经导出的 `/sys/fs/pstore` 文件，候选接入点为 pstore 挂载后、已知首次 `start logd` 前的同步 init 命令。它尚未部署或在 Android 上执行，没有可部署的 init 修改；本机测试和交叉编译不验收 Android、pstorefs、SELinux 或启动恢复。调查背景见 [pmsg 校准记录](../../docs/lg-g8-omarchy/PMSG-CALIBRATION.md)。
+[pstore-snapshot.c](pstore-snapshot.c) 用于复制内核已经导出的 `/sys/fs/pstore` 文件，候选接入点为 pstore 挂载后、已知首次 `start logd` 前的同步 init 命令。2026-10-27 已在 LG G8 当前 Android 14 的 Magisk 域中完成一次运行冒烟，返回完整空快照；这仅验证该运行环境与采集时点，未部署 init，也未验收早期启动权限、执行顺序或启动恢复。调查背景见 [pmsg 校准记录](../../docs/lg-g8-omarchy/PMSG-CALIBRATION.md)。
 
 ## 接口与输出
 
@@ -51,7 +51,19 @@ NDK r30（`30.0.16248370`）构建成功，产物是静态 AArch64 ELF，没有 
 
 产物的 `.note.android.ident` 为 API 37，独立本机调查和链接 map 将其追到通用 `sysroot/usr/lib/aarch64-linux-android/crtbegin_static.o`；该对象自身就含同一 note，SHA-256 为 `54a4064274bc41313f005e4865bc03f10fccdffa801c8c6ba619b29f3709b9bc`。android21/28/34 对照选择同一通用静态启动对象和 libc.a；编译目标 API 数字不会重建这些预编译库。NDK 自带构建规则也对静态 executable 使用低于最高 API 的 APP_PLATFORM 给出构建警告，而非运行兼容承诺。
 
-因此准确描述为“NDK r30 静态 Bionic 构建，编译目标 API 34，运行兼容性未验证”。静态链接去掉了设备动态链接器及共享 libc 依赖，仍依赖内核接口、启动信息和安全策略；未完整审核所有可达静态库启动路径，不能给出精确最低 Android/Linux 版本。修改或删除 note 不会改变 libc 实现。没有把本机 ELF 检查或其他静态 GNU 构建当作 LG G8 兼容性验收。
+因此准确描述为“NDK r30 静态 Bionic 构建，编译目标 API 34，已在当前 LG G8 Android 14 的 Magisk 域中完成一次运行冒烟，通用运行兼容性未验收”。API 37 note 本身不能判定 Android 14 不兼容；下述真机结果验证了该产物在这一具体环境中的启动、worker 和空 pstorefs 枚举路径。静态链接去掉了设备动态链接器及共享 libc 依赖，仍依赖内核接口、启动信息和安全策略；未完整审核所有可达静态库启动路径，不能给出精确最低 Android/Linux 版本。修改或删除 note 不会改变 libc 实现。本机 ELF 检查或其他静态 GNU 构建也不能代替真机验收。
+
+## 当前 Android 14 运行冒烟
+
+2026-10-27 在当前已完成启动的 LG G8 Android 14 上，以 root、SELinux `u:r:magisk:s0` 执行上述摘要对应的现有正式产物，未重建。最初 `adb push` 因目标暂存目录属于 root 且权限为 `0700` 而报 Permission denied，失败发生在 helper 执行前；随后确认目标可执行文件和输出目录尚不存在，通过 root 命令的标准输入传输产物，设置执行权限为 `0700`，核对远端 SHA-256 与本机产物一致后，才进行首次且唯一一次 helper 执行。这是传输失败后的继续操作，没有重跑 helper。
+
+执行设置了外层 15 秒 SIGKILL 超时，实际约 0.115 秒结束，helper 退出码为 `0`。`status.json` 为 `state=complete`、`complete=true`、`child_exit=0`；manifest 确认源为 pstorefs，末尾 `end.complete=true`、`entries=0`、`bytes=0`，无文件错误。这是该时点的完整空快照（0 条记录），没有验证非空记录的真机复制，也不能据此推断早期 pstore 或 RAM 状态。
+
+同一次启动内回收了 `boot_id`、`mountinfo`、`manifest.jsonl`、`status.json` 四份文件，各自的本机与远端长度、SHA-256 及 `0600` 权限均复核一致；执行前、快照与执行后的 boot_id 一致。验证后清理了设备上的临时可执行文件、四份输出及两个临时目录，并检查路径已不存在。私有原始内容未写入仓库。
+
+证据保存在本机私有目录 `/home/lightjunction/Documents/Codex/2026-10-25-lg-g8-omarchy/private/pstore-runtime-smoke-20261027-f1e537a0a46e2529/`：`result.json` 记录最初传输失败，`continuation-result.json` 记录继续传输、唯一一次执行、回收验证和清理，后者 SHA-256 为 `42f5471334379283b70c2db8daf1b6ac08ec432f1d8287523715bfbf6ffa5893`。
+
+本次未部署 init、未写 pmsg、未 reboot，也未生成启动镜像。Magisk 域中的晚期运行成功不保证早期 init 域具有所需权限，不保证先于 logd 或其他消费者执行，也不证明跨 reboot 或失败启动后的恢复能力。
 
 ## 接入与回收尚待核对
 
@@ -59,4 +71,4 @@ NDK r30（`30.0.16248370`）构建成功，产物是静态 AArch64 ELF，没有 
 
 暂存不依赖 `/data`，但 tmpfs 不跨 reboot。应在同一次 Android 启动内回收，核对 boot_id、helper 退出和报告状态、每个文件的长度及 SHA-256，再与晚期 pstore 对照。Android 未返回、目录消失或超时遗留 worker 未停止时，不能声称完整回收。早期有 payload、晚期消失只缩小变化窗口，具体消费者仍需执行证据。
 
-当前只完成源码、本机测试和交叉构建，没有上传或执行 helper、部署 init、生成启动镜像或新增 reboot。启动修改及新的设备实验仍需具体可审查材料、恢复前提和相应授权；一次性 pmsg 校准授权已用于原失败实验。
+当前已完成源码、本机测试、交叉构建，以及上述一次当前 Android 14 Magisk 域中的运行冒烟和完整空快照回收；没有部署 init、生成启动镜像、写入 pmsg 或新增 reboot。早期启动接入仍待验证。启动修改及新的设备实验仍需具体可审查材料、恢复前提和相应授权；一次性 pmsg 校准授权已用于原失败实验。
