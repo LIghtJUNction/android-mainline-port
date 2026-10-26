@@ -25,9 +25,11 @@
 
 ## 当前验收与下一步
 
-后续离线排查发现完整载荷 shim 在源地址仅按 4 字节对齐时，其 64 位常量读取会未对齐；实际 ABL 装载地址和对齐检查状态未知，因此这不是已确认的真机故障。独立 [align4 离线模型](../../tools/lg-g8/local-sim/abl-handoff-align4/README.md) 已将常量读取和载荷复制改为 32 位访问，归档源码/载荷并重建核对制品，使用显式异常代替 assert；普通和 Python 优化模式均通过 76 项合成 CPU 场景、4 项未对齐负对照及 9 项非法构建输入拒绝。DTB 地址已按 ARM64 入口约定收紧为 8 字节对齐，拒绝路径验证连续 128 条 blocked 指令，初始 DAIF 未屏蔽也有覆盖。没有替换原 shim；当前工具未验收完整载荷，缓存只检查清理地址轨迹，hardware_ready=false。此前私有补丁的约 29 MB 模拟不算当前工具的验收证据，历史补丁与报告位于主工作区 `private/shim-align4-offline-20261027-1/`。
+后续离线排查发现完整载荷 shim 在源地址仅按 4 字节对齐时，其 64 位常量读取会未对齐；实际 ABL 装载地址和对齐检查状态未知，因此这不是已确认的真机故障。独立 [align4 离线模型](../../tools/lg-g8/local-sim/abl-handoff-align4/README.md) 已将常量读取和载荷复制改为 32 位访问，归档源码/载荷并重建核对制品，使用显式异常代替 assert；普通和 Python 优化模式均通过 76 项合成 CPU 场景、4 项未对齐负对照及 9 项非法构建输入拒绝。DTB 地址已按 ARM64 入口约定收紧为 8 字节对齐，拒绝路径验证连续 128 条 blocked 指令，初始 DAIF 未屏蔽也有覆盖。没有替换原 shim；当前工具未验收完整载荷，缓存只检查清理地址轨迹，hardware_ready=false。此前私有补丁的约 29 MB 模拟不算当前工具的验收证据，历史补丁与报告位于主工作区 `private/shim-align4-offline-20261027-1/`。最终 8 字节 DTB 对齐版本的本轮报告为 `out/abl-handoff-align4/{acceptance-20261027-2,acceptance-optimized-20261027-2}/results.json`。
 
-新增 EP2 离线读回器区分原始 RAM 区与 pstore payload，错误输入生成 inconclusive，报告以 0600 排他创建；7 项合成记录/文件错误测试通过，同轮 local-sim 共 78 项回归通过。console 重启保留、Android 导出及早期挂死恢复仍未验收。主机控制器修正版对采样故障、优化模式等执行了模拟测试，私有材料位于 `private/usb2-controller-offline-fix-20261027-2/`；独立审查发现镜像校验与发送之间可能被替换，且 fastboot 目标与所观察的 USB 端口尚未绑定；完整控制器集成和设备测试也未完成，不能直接用于手机。以上工作未操作设备。
+ABL 静态研究已由 LinuxLoader 指令及对应头文件交叉核对：`EFI_RAMPARTITION_PROTOCOL` GUID 为 `5172ffb5-4253-7d51-c641-a701f973103c`，`GetRamPartitions` 返回各分区的 `Base` / `AvailableLength`，取 `B=min(Base)`；gzip 路径的解压输出与入口均为 `E=B|0x80000`。运行时 B 和提供该协议的 provider 仍未知，不能假设具体装载数值；该静态结论不证明当前候选执行。
+
+新增 EP2 离线读回器区分原始 RAM 区与 pstore payload，错误输入生成 inconclusive，报告以 0600 排他创建；7 项合成记录/文件错误测试通过，同轮 local-sim 共 78 项回归通过。既有 halt/PSCI EP2 各通过 17 项 CPU 场景及 12 组 codec 检查，新报告分别为 `out/entry-probe/ep2-halt-2/cpu-readback-acceptance-20261027-1.json` 和 `out/entry-probe/ep2-psci-2/cpu-readback-acceptance-20261027-1.json`。console 重启保留、Android 导出及早期挂死恢复仍未验收。主机控制器修正版对采样故障、优化模式等执行了模拟测试，私有材料位于 `private/usb2-controller-offline-fix-20261027-2/`；独立审查发现镜像校验与发送之间可能被替换，且 fastboot 目标与所观察的 USB 端口尚未绑定；完整控制器集成和设备测试也未完成，不能直接用于手机。以上工作未操作设备。
 
 已完成从当前 Android 使用已安装修复进入 fastboot、协议 getvar 检查、返回 Android及 root、槽位、marker、boot_b 哈希复核。最初执行被自动审批拦截；用户再次明确指令后执行成功。不要再次刷入同一修复。
 
