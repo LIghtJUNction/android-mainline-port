@@ -50,8 +50,13 @@ python3 tools/lg-g8/repair-tty-export.py \
 工具只读取本机文件，不使用设备。需要 Python 3、libfdt/dtc 和 avbtool。
 它拒绝不符合完整 LF→CRLF 变换的输入，不覆盖原文件；重复运行只复用字节相同的修复输出。
 报告、dtc 警告和官方 AVB 输出保留在输出目录。原始备份和修复后的图像都不提交到 Git。
-以后导出二进制应使用不分配终端、不做文本转换的方式，例如 ADB 的 exec-out；
-接收后先检查格式、压缩校验和分区尺寸，再开展适配分析。
+以后导出二进制必须先验证传输方式，不能仅凭 `exec-out` 的名字判断。
+2026-10-26 在当前手机实测：普通 `adb exec-out` 保留原始字节，但
+`adb exec-out "su -c '...'"` 的 root 会话带有 `onlcr`，仍会把 LF 改成 CRLF。
+`adb shell -T "su -c '...'"` 通过了混合 LF/CRLF 探针；用它重新导出的
+96 MiB `boot_b` 与手机端直接计算的 SHA-256 一致。
+所有命令都应指定目标设备序列号。实际使用前先传输包含独立 LF 和原生 CRLF
+的已知字节串，再核对导出文件的设备端哈希、格式、压缩校验和分区尺寸。
 
 ## 与 Linux 适配的关系
 
@@ -60,4 +65,4 @@ python3 tools/lg-g8/repair-tty-export.py \
 [板级修复与验证](../../tools/lg-g8/local-sim/dtb/README.md)以干净 runtime 为输入，
 按区间并集验证保留内存覆盖，避免把 runtime 中重叠的聚合描述直接复制成重叠节点。
 
-这纠正了本机适配输入，不代表已经验证 LG 硬件。手机实验仍未执行。
+这纠正了本机适配输入，不代表已经验证 LG 硬件。之后的手机 RAM 实验仍未取得可归属到主线 Linux 的执行证据；Android 的软件 fastboot 修复另有成功记录。当前验收范围和失败结果见 [STATUS.md](STATUS.md)。
