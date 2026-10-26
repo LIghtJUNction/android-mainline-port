@@ -46,7 +46,7 @@ dtc -I dts -O dtb -o out/lg-alphalm/board.dtb out/lg-alphalm/board.preprocessed.
 当前 tiny 内核关闭了 DRM，因此本机 USB shell 验证不能证明本文件的显示节点正确。
 固件 splash 内存保留也不表示 Linux 显示驱动已接管屏幕。
 
-另有独立的 [USB2 诊断板树](USB2-DIAGNOSTIC.md)：仅覆盖 USB1 的 PHY 引用、速度上限和 UTMI 时钟选择，用于解除禁用 QMP PHY 的消费依赖。原板树保持不变；诊断配置尚未进行真机启动或 USB 验收。
+另有独立的 [USB2 诊断板树](USB2-DIAGNOSTIC.md)：仅覆盖 USB1 的 PHY 引用、速度上限和 UTMI 时钟选择，用于解除禁用 QMP PHY 的消费依赖。原板树保持不变；诊断配置已进行一次 RAM 测试，未取得 Linux USB/shell 证据，手机已回到原 Android。主机控制错误及观察缺口使修改效果仍未定，完整记录见诊断说明。
 
 ## 离线启动检查与看门狗配置
 

@@ -1,6 +1,6 @@
 # LG G8 USB2 诊断板树
 
-`sm8150-lg-alphalm-usb2.dts` 是独立的 USB2-only 诊断配置，包含现有校准后板树，仅覆盖 USB1 的四个属性。它用于下一次主线启动候选的 USB 依赖收敛；尚未在手机启动或证明 USB 枚举成功。
+`sm8150-lg-alphalm-usb2.dts` 是独立的 USB2-only 诊断配置，包含现有校准后板树，仅覆盖 USB1 的四个属性。它用于主线启动候选的 USB 依赖收敛。2026-10-27 已执行一次 RAM 启动，手机接受候选并随后回到原 Android，未取得 Linux USB/shell 证据；主机控制错误及观察缺口使本次不能判定 USB2 修改是否有效，见下文真机记录。
 
 ## 为什么需要单独配置
 
@@ -53,4 +53,22 @@ python -I tools/lg-g8/local-sim/tests/test_usb2_profile.py \
 
 交接侧核对了旧失败候选的实际 Android v0 封装：解压 shim、内嵌 Image/initramfs/DTB 与记录字节一致；四项 shim CPU 检查通过。其 Linux DTB 与基线仅相差 `/chosen` 的启动参数和 initrd 地址。Image 内嵌 IKCONFIG 提取后与仓库 tiny 配置逐字节一致，SHA-256 为 `c8ee45c025a01e35cf488e7ada4a60ef321b4bd0560af07ed6027ff3b8efceb2`；因此旧 Image 的 `QCOM_WDT=m`、`WATCHDOG_OPEN_TIMEOUT=0` 与 DRM 关闭状态有直接配置证据。没有发现只需重建相同基线即可解决的载荷错配。该轮核对保存在 `out/handoff-envelope-review-20261027-1/verification.json`，包括实际封装检查、四项 CPU 结果和命令摘录；报告明确是对已捕获执行结果的事后整理，不冒充原始测试脚本自动产物。现有 handoff 验证器只读取 shim 文件、未自动覆盖最终 boot 封装的测试缺口仍保留，手工核对只覆盖这份旧镜像。
 
-编译和 libfdt 检查不证明 Linux 已执行、DWC3 probe、实际协商速度、DMA、USB shell、显示或恢复成功。该配置尚未进入新设备启动镜像。旧失败候选 `lg-native-3` 不应原样重试；新候选仍需固定 Image/initramfs/DTB 身份、一个明确实验变量、期限和实际可用的恢复路线。
+编译和 libfdt 检查不证明 Linux 已执行、DWC3 probe、实际协商速度、DMA、USB shell、显示或恢复成功。旧失败候选 `lg-native-3` 不应原样重试；设备候选仍需固定 Image/initramfs/DTB 身份、一个明确实验变量、期限和实际可用的恢复路线。
+
+## 2026-10-27 单次 RAM 测试
+
+用户明确要求操作手机测试，并确认在旁可配合按键恢复后，准备并发送一次新候选 `out/abl-handoff/usb2-ram-20261027-1/boot.img`，大小 12,197,888 字节，SHA-256 为 `be3121d3545963e01ec05f8866bcaab964e86e1e13ba02fa007d07d32961dab4`。未写入、擦除分区或换槽。
+
+最终 boot 封装直接解包的 56 项检查和四项 Unicorn CPU 交接检查全部通过；Image 和最终 initramfs 与旧候选逐字节一致，完整 bootargs、目的地址与 120 秒用户态重启策略保持不变，Linux DTB 的语义变化恰为上述四个 USB 属性。最终 Linux DTB SHA-256 为 `9ba32fd1355f4f3d7240413b7d83e22940bf2fd31b79514cac1a52e6c7ccf8a6`；DTB 增加 63 字节，对齐 payload 增加 64 字节，shim 长度和封装校验随之更新。构建 argv、输入指纹、CPU 和封装报告均保存在同一输出目录，旧材料未覆盖。
+
+实际 `fastboot boot` 退出 0：发送约 0.277 秒，Booting 返回约 5.160 秒，命令总计约 5.443 秒。这只说明手机接受 RAM boot，不证明 Linux 已执行。
+
+主机控制脚本在发送开始约 8.45 秒仍见原 fastboot USB 标识，错误地把它当作已返回的 fastboot，发出一次 `fastboot reboot`。该命令以 `Write to device failed (No such file or directory)` 失败，脚本随后停止。此前没有先观察到断开和稳定重新枚举，也没有重新核对协议；不能证明这次失败请求完全没有影响设备，因此它是本次实验的干扰因素。没有重发候选。
+
+后续只读检查先确认目标 USB 已消失，再由被动观察器在候选发送约 95.459 秒后首次观察到 Android USB `1004:631f`。这是该观察器的采样时点，不是精确复位或枚举耗时；主动脚本与被动观察器之间存在观察缺口。用户报告黑屏后回到 Android，期间没有按键或拔插 USB。不归因于 watchdog、120 秒用户态计时器或任何特定复位机制。当前 Android 的启动原因属性为 bootloader，PMIC 日志含硬复位冷启动与此前 PS_HOLD 关机信息；这些仍不能归属到候选执行阶段或确定触发者。
+
+本轮未取得 Linux gadget `18d1:4ee7` 或 ACM shell 的证据；观察缺口和主机控制错误也不足以排除短暂出现。回到 Android 后只读核对 model/device、启动完成、root、槽 `_b`、内核、修复 marker 与 boot_b 哈希均通过，boot_id 相对测试前已变化且回收过程中保持一致；boot_b 仍为已验收的 `fec418e5227a31927af27daf71d2225246f5adcf8dda38b5856200760b5205cd`。pstore 普通文件数为 0，不能据此判断主线未执行或 RAM 内容丢失。
+
+结果为：未达到 Linux USB/shell 验收，USB2 修改效果仍未定；Android 回收与分区未变已验证。先修正主机状态判断，不自动重测，也不以这次结果否定或证明 USB2 路线。
+
+私有设备证据根目录为 `/home/lightjunction/Documents/Codex/2026-10-25-lg-g8-omarchy/private/usb2-ram-device-20261027-1/`，不提交原始日志、boot_id 或设备序列号。`result.json` 保留脚本失败，`controller-issue.json` 解释控制错误，`passive-observer-result.json`、`postcheck-result.json` 与 `user-observation.json` 分别保存后续采样、Android 完整回收和人工观察；不把后续回收成功覆盖到原脚本结果。`postcheck-result.json` SHA-256 为 `6b396835e122a9b39a2eccff45675e2cde7b540bf7ab786ede6f0de6ac110fe5`，原失败 `result.json` 为 `7f7010d0a36222ba973572236d896fcfc5f15c3a9b5f89dbcfce70a0d7e0e03d`，人工观察记录为 `926e3ec503b48e6213562e6bc80eef5c4435df73825d1ff5bf20b117ce21af73`。

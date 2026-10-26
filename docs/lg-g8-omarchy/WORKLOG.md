@@ -2,6 +2,16 @@
 
 按结论变化记录，当前验收与下一项设备实验以 [STATUS.md](STATUS.md#当前验收与下一步) 为准。原始设备资料留在私有工作区，不提交。
 
+## 2026-10-27：USB2 候选真机单次 RAM 测试
+
+用户明确要求操作手机，并确认在旁可配合按键恢复。新候选 `out/abl-handoff/usb2-ram-20261027-1/boot.img` SHA-256 为 `be3121d3545963e01ec05f8866bcaab964e86e1e13ba02fa007d07d32961dab4`；保持 Image/initramfs、完整 bootargs、装载目的地址和 120 秒用户态计时不变，仅四项 USB DT 属性变化。最终封装直接解包的 56 项检查、四项 CPU 交接检查通过；准备阶段只读确认设备、有效备份和电量 100%、31°C，未修改或刷写分区。
+
+执行一次 `fastboot boot`，退出 0，总计约 5.443 秒。主机控制脚本没有先要求 USB 断开，错误地把启动后仍存的 fastboot 标识当作已返回，约 8 秒后发出一次 reboot；该命令以设备消失写入失败退出，不能证明请求无副作用，故本次包含主机干扰。原失败 result 保留，没有重发候选。后续只读确认 USB 缺失，被动观察器在候选发送约 95.459 秒采样到 Android USB；这不是精确重启耗时，间隔存在观察缺口。用户报告黑屏后回到 Android，未按键或拔插。
+
+没有取得 Linux gadget/shell 证据；本次未达到 Linux USB 验收，不能判定 USB2 改动是否生效。Android 回收的 model/device、启动完成、root、槽 b、内核、marker 和 boot_b 哈希全部通过，boot_id 已变化且回收期间一致，pstore 0 个普通文件。回到 Android 不归因 watchdog 或用户态计时器，空 pstore 不代表主线没有执行。下一步修正主机状态判断并做离线轨迹回归，本轮不自动再测。
+
+私有证据为主工作区 `private/usb2-ram-preflight-20261027-1/` 和 `private/usb2-ram-device-20261027-1/`。后者分别保留原脚本失败、控制错误、被动观察、完整 Android 回收与用户观察，53 份已有证据文件的长度/摘要/0600 权限已核对；没有将回收成功改写成原脚本成功。详情见 [USB2 真机记录](../../devices/lg-alphalm/USB2-DIAGNOSTIC.md#2026-10-27-单次-ram-测试)。
+
 ## 2026-10-27：主线 USB2 诊断配置
 
 重新编译仓库基线板树，逐字节复现已审计的 `eb6f12cfedf7cdd9591b27cc138e79ee08efa24b36053ff5bac80fc21166d5d9`，记录 33 项实际 CPP 输入指纹。旧失败候选的 Linux DTB 与该基线只差 `/chosen` 的启动参数和 initrd 地址；实际 boot 封装的解压 shim、Image/initramfs/DTB 字节链一致，四项 shim CPU 检查通过。Image 的 IKCONFIG 提取后与仓库 tiny 配置完全一致，补上失败 Image 与配置的直接关联；这不认证全部源码和历史构建环境，也不证明手机实际进入 shim。
