@@ -150,6 +150,6 @@ exec /init
 
 ## 下一项设备实验与阻塞
 
-唯一下一项设备实验仍是 [一次性 pmsg 保留校准](../../tools/lg-g8/local-sim/entry-probe/README.md#保留校准计划尚未执行)。此前自动审批在命令启动前拒绝 helper 上传、root 执行、一次 `/dev/pmsg0` 追加和正常 Android reboot，理由是继承摘要中的助手授权判断不能证明用户同意，需要对指定设备上的该操作明确批准。此次没有重试、换工具或委派绕过拒绝。
+2026-10-27，用户明确批准后已执行 [一次性 pmsg 保留校准](PMSG-CALIBRATION.md)：63 字节完整写入、正常 Android reboot 返回且 boot_b 哈希匹配，但 pstore 为空，读回失败。此前命令启动前的自动审批拒绝属于历史时点，当前阻塞是日志读回链路未建立。没有重复写入或 reboot，也没有新候选启动。
 
-即使 pmsg 通过，console / EP2 保留、裸探针 PSCI reset，以及抵达 reset 前挂死后的恢复仍需分别验证。不能将 pmsg 成功或上述静态看门狗证据当作全自动迭代的验收。最新已知手机状态来自此前完成的软件 fastboot 往返：已返回 Android；本次未重新测量，没有后台设备任务。结论变化见 [工作日志](WORKLOG.md)，临时用户态计时器见 [技术债](TECHNICAL-DEBT.md)。
+下一步先核对实际运行 Android 的 pstore 消费与删除实现，并设计早于消费者的只读采集；本次空读回尚不能区分保留、识别/导出和用户态清理。console / EP2 保留、裸探针 PSCI reset，以及抵达 reset 前挂死后的恢复仍需分别验证，不能将完整 pmsg 写入或上述静态看门狗证据当作全自动迭代验收。设备最后实测为本次 reboot 后的同一 Android 启动，启动完成、root 可用、槽位 b、内核符合预期；没有后台设备任务。结论变化见 [工作日志](WORKLOG.md)，临时用户态计时器见 [技术债](TECHNICAL-DEBT.md)。

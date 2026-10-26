@@ -6,7 +6,7 @@
 
 1. 根据已校验 runtime FDT 核对 Android console 区域，独立实现 persistent RAM 记录编码、有效性检查和环形重组。
 2. 编译位置无关 ARM64 探针，执行实际机器码，核对阶段、nonce、原始状态、复制结果、边界保护和 reset 请求。
-3. 独立审查后，先设计 Android 写入→正常 warm reset→Android 读回的保留校准。读回需同时验证传输、记录格式、nonce 和内容；这项校准本身尚未完成。
+3. 独立审查后，先完成 Android 写入→正常 warm reset→Android 读回的保留校准。2026-10-27 已执行一次：完整 pmsg 写入并返回 Android，重启后 pstore 为空，读回失败；详见 [实测记录](../../../../docs/lg-g8-omarchy/PMSG-CALIBRATION.md)。
 4. 只有恢复方式和读回校准明确后才安排新 RAM 启动实验；每次实验使用新的 nonce，提前记录镜像哈希和预期。此工具不访问设备。
 
 离线通过要求有效/空/满环/坏签名/start 越界/size 越界记录判定正确，并检测内容损坏、非法捕获状态及 ENTER/TARGET 不一致；halt 在 EL1/EL2/EL3、PSCI 在 EL1/EL2 的实际探针机器码保存输入并抵达目标地址，PSCI 在 EL3 必须于写日志前拒绝。所有数据读写检查自然对齐；包含实际设置 SCTLR.A=1、源 Image 仅按 4 字节或 8 字节对齐的场景。MMU-on 或代码/DTB 重叠时不能越界写目标。CPU 模拟中的 cache 操作不代表真机缓存一致性，SMC 拦截不代表固件接受 reset。
@@ -31,12 +31,16 @@ halt 支持 EL1/EL2/EL3，PSCI 仅支持 EL1/EL2；PSCI 在 EL3 写日志前拒�
 
 即使真机取得 ENTER+TARGET，也只证明这个微小 payload 的路径，不能外推到完整 Linux Image 的复制几何、解压或执行。
 
-## 保留校准计划（尚未执行）
+<a id="保留校准计划尚未执行"></a>
+
+## 保留校准计划与实测结果
+
+2026-10-27 已执行一次校准：helper 完整写入 63 字节，正常 reboot 返回 Android，boot_b 哈希符合预期；重启后 pstore 为空，校准未通过。当前阻塞是读回链路，不再是此前审批拒绝。没有重试写入或 reboot；结果、私有证据和只读定位集中见 [pmsg 校准记录](../../../../docs/lg-g8-omarchy/PMSG-CALIBRATION.md)。下面保留实验设计和历史前置验证。
 
 先用 Android 管理的 `/dev/pmsg0` 检查正常 warm reset 的保留与导出链。厂商同一提交的 `fs/pstore/pmsg.c`（blob `24db02de1787453d4ad838443dd39e4a7e948484`）将写入转给 pstore `write_user`；`fs/pstore/ram.c`（blob `dac81bcaed0055604a13fbe325a3362378281008`）再调用 `persistent_ram_write_user(mprz, ...)`。按本机布局，pmsg 位于 `[0xb0080000,0xb0280000)`，与探针写入的 console 分开。源码线索不能替代实际节点、运行内核和重启后的读回证据。
 
 1. 只读确认指定真机的 Android、root、槽位、电量、温度、pstore 挂载、已有日志及 `/dev/pmsg0` 节点和权限。先保存现有 pstore 和相关内核日志，记录各文件长度与 SHA-256；不清空日志、不裸写活跃 console、不假设 `/dev/mem` 可用。离开 Android 前核对恢复材料和独立审查结论。
-2. 私有实验记录预先写明唯一 nonce、短 payload 的原始字节、长度、SHA-256、正常 Android reboot 路径、等待期限和恢复步骤。通过二进制安全的通道传输并在设备侧核对长度和哈希，再经 `/dev/pmsg0` 追加一次；短写或失败即停止。私有一次性脚本 `tools/calibrate-pmsg.py` 已完成本机验证和独立复核，传输、失败停止及等待期限见下文；节点权限曾只读确认，实际设备写入和重启读回尚未验证。
+2. 私有实验记录预先写明唯一 nonce、短 payload 的原始字节、长度、SHA-256、正常 Android reboot 路径、等待期限和恢复步骤。通过二进制安全的通道传输并在设备侧核对长度和哈希，再经 `/dev/pmsg0` 追加一次；短写或失败即停止。私有一次性脚本 `tools/calibrate-pmsg.py` 已完成本机验证和独立复核，传输、失败停止及等待期限见下文；实际设备完整写入已通过，重启读回失败，见上述实测记录。
 3. 正常重启返回 Android 后，立即采集新的 pstore、挂载和相关内核日志。对导出文件同时核对设备端/主机端长度与哈希，在 `pmsg-ramoops-*` 中要求出现一次完整、逐字节一致的新 payload；旧 nonce、部分内容或仅节点存在都不算通过。超时或缺失只记该校准失败/无结论，不推导探针是否执行。
 4. pmsg 成功仅覆盖该区域、该运行内核和正常 Android 重启路径。console 的 12 字节头部及探针记录读取仍需另行校准；裸探针 PSCI reset 的 RAM 保留与恢复也必须独立验证。没有这些证据和抵达 reset 前挂死的恢复方案，不能将探针送手机。
 
@@ -44,7 +48,7 @@ halt 支持 EL1/EL2/EL3，PSCI 仅支持 EL1/EL2；PSCI 在 EL3 写日志前拒�
 
 同日从该脚本提取实际汇编，以合成 payload 构建静态 AArch64 ELF，在 Unicorn 2.1.4 中执行真实机器码并模拟 Linux 系统调用。完整写入、短写、写失败、打开失败四种场景均通过；前三种仅发起一次 pmsg write，打开失败不发起写入。合成测试 writer 的 SHA-256 为 `445cac6c61760d3da61d3a9c5735af0c181849a9c12388abd8bbe9fcec3f0b69`，私有报告为 `audit/pmsg-writer-local-20261026-v1/report.json`。这些结果不证明 Android 接受该 ELF，也不证明设备的 pmsg 写入或重启保留。
 
-随后尝试执行一次真机校准时，自动审批拒绝了 helper 上传、root 执行、`/dev/pmsg0` 写入及正常 Android reboot，要求用户对指定设备上的这次操作明确批准；交接摘要中的助手授权判断不被视为用户同意。脚本没有启动，没有真实校准 nonce、写入或重启结果，也没有后台设备实验。该拒绝属于操作审批阻塞，不是真机校准失败。获得明确批准后才能执行这一次校准，不能换工具或代理绕过拒绝。
+历史审批记录（2026-10-26）：尝试执行一次真机校准时，自动审批拒绝了 helper 上传、root 执行、`/dev/pmsg0` 写入及正常 Android reboot，要求用户对指定设备上的这次操作明确批准；交接摘要中的助手授权判断不被视为用户同意。当时脚本没有启动，没有真实校准 nonce、写入或重启结果，也没有后台设备实验。该拒绝属于当时的操作审批阻塞，不是真机校准失败；当时须获得明确批准，不能换工具或代理绕过。用户随后明确批准，2026-10-27 的一次执行及失败读回见上述实测记录。
 
 ## 已完成的本地验证
 
@@ -59,7 +63,7 @@ halt 支持 EL1/EL2/EL3，PSCI 仅支持 EL1/EL2；PSCI 在 EL3 写日志前拒�
 
 历史产物保留：`ep2-halt-1`（SHA-256 `007d1eb8b8318a5d0e84a947aa00ca16816c2537de83d503d6d3f6b7b7489d80`）和 `ep2-psci-1`（`d17ca08583b5a240c81554ce6c917fa0bf561f23fd8e9c068502e897eb5bc891`）各通过 15 CPU/12 codec，并经独立复跑；它们早于 stage2 源对齐修复，不代表当前源码。`local-1` 为首次链接失败现场，后续使用 `--image-base=0`；`local-2`（SHA-256 `a18cc932acd2e403d33aa1ac09b0c44cb331cecd126b1bd9b6797c82ae555f4b`）与 `psci-1`（`6d9ff5b09b6d562d0fe3e6864736b98b4d3edc895bf3a8a048feb97f4c70e48f`）是修复前各 12 CPU/9 codec 的旧结果，不证明当前 EP2。旧 PSCI EL3 的成功被 SMC hook 掩盖，不能算有效支持证据。验证器曾把源地址等于目标地址时的 halt 误认为搬移后执行，现已按实际进入目标的轨迹区分，相关拒绝场景通过。
 
-此前只读前置检查曾确认 `/dev/pmsg0` 为 `c-w--w--w- root log`、pstore 已挂载且为空，当时电量 89%、32°C；这些是历史测量。2026-10-26 21:12 的软件 fastboot 往返复验已返回 Android，前后均确认 boot_completed=1、root 可用、槽位 b、内核 `4.14.348-openela-perf+`、修复 marker 与 boot_b 哈希一致，boot_id 已变化；离开 Android 前电量 99%、33.3°C、USB 供电。本次还验证了 shell-v2 和 root 退出码 37，但未进行六字节二进制传输探测，也未重新采集 pmsg 节点或 pstore。版本、分区哈希及私有证据位置见 [当前状态](../../../../docs/lg-g8-omarchy/STATUS.md#当前验收与下一步)。该复验已结束，没有后台设备任务；pmsg 校准仍因上述审批阻塞而未执行，未生成新的 boot.img，也没有真机 ENTER/TARGET 证据。
+此前只读前置检查曾确认 `/dev/pmsg0` 为 `c-w--w--w- root log`、pstore 已挂载且为空，当时电量 89%、32°C；这些是历史测量。2026-10-26 21:12 的软件 fastboot 往返复验已返回 Android，前后均确认 boot_completed=1、root 可用、槽位 b、内核 `4.14.348-openela-perf+`、修复 marker 与 boot_b 哈希一致，boot_id 已变化；离开 Android 前电量 99%、33.3°C、USB 供电。本次还验证了 shell-v2 和 root 退出码 37，但未进行六字节二进制传输探测，也未重新采集 pmsg 节点或 pstore。版本、分区哈希及私有证据位置见 [当前状态](../../../../docs/lg-g8-omarchy/STATUS.md#当前验收与下一步)。该复验已结束；在该历史时点 pmsg 校准仍因上述审批阻塞未执行。随后一次校准及最新设备状态见上述实测记录；仍无新 boot.img 或真机 ENTER/TARGET 证据。
 
 ## 有序写入前缀检查
 
