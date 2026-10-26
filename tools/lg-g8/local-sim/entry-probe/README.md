@@ -52,14 +52,31 @@ halt 支持 EL1/EL2/EL3，PSCI 仅支持 EL1/EL2；PSCI 在 EL3 写日志前拒�
 
 | 变体 | nonce | Image SHA-256 | 本机报告 |
 | --- | --- | --- | --- |
-| halt | `ade8e3e41766f2780ab99e511cec4be1` | `abc48046b902f37e91f7c6c95b9c204f18476c7d0a82389fd9aba33c9128d011` | `out/entry-probe/ep2-halt-2/cpu.json` |
-| psci | `14de72f38572aaf891711ef99ad3c40d` | `8a767960263b3caa184aa186a8c78083b3967b7804066f37ee00876c00635cc7` | `out/entry-probe/ep2-psci-2/cpu.json` |
+| halt | `ade8e3e41766f2780ab99e511cec4be1` | `abc48046b902f37e91f7c6c95b9c204f18476c7d0a82389fd9aba33c9128d011` | `out/entry-probe/ep2-halt-2/cpu-store-prefix-v2.json` |
+| psci | `14de72f38572aaf891711ef99ad3c40d` | `8a767960263b3caa184aa186a8c78083b3967b7804066f37ee00876c00635cc7` | `out/entry-probe/ep2-psci-2/cpu-store-prefix-v2.json` |
 
-两次构建使用不同 nonce，哈希差异同时包含 nonce 与 reset 代码差异。halt 的 stage2 为 256 字节，PSCI 为 288 字节。独立审查指出的三项问题已修复并通过上述回归：console+12 上的未对齐 64 位访存改成 32 位访问；PSCI 在 EL3 写日志前拒绝，验证器也禁止拦截 EL3 SMC 为成功；记录升级为带 CRC32、语义及跨记录检查的 EP2。独立复核确认三项修复成立，随后发现仅按 4 字节对齐的源 Image 在 stage2 复制时仍有 64 位未对齐读取；现已将该复制也改为 32 位 LDR/STR，并加入 4/8 字节源对齐场景。针对性独立复核分别重跑两种产物的这两个场景，四次均通过，未发现该改动的剩余正确性问题。执行级提交中断时序尚未验证：未覆盖在 payload、CRC 或 header 各次更新之间停止 CPU 再读回，因此这些结果不能证明断电一致性。
+两次构建使用不同 nonce，哈希差异同时包含 nonce 与 reset 代码差异。halt 的 stage2 为 256 字节，PSCI 为 288 字节。独立审查指出的三项问题已修复并通过上述回归：console+12 上的未对齐 64 位访存改成 32 位访问；PSCI 在 EL3 写日志前拒绝，验证器也禁止拦截 EL3 SMC 为成功；记录升级为带 CRC32、语义及跨记录检查的 EP2。独立复核确认三项修复成立，随后发现仅按 4 字节对齐的源 Image 在 stage2 复制时仍有 64 位未对齐读取；现已将该复制也改为 32 位 LDR/STR，并加入 4/8 字节源对齐场景。针对性独立复核分别重跑两种产物的这两个场景，四次均通过，未发现该改动的剩余正确性问题。后续已补齐下述有序写入前缀检查；硬件缓存持久化和真实 reset 仍未验证。
 
 历史产物保留：`ep2-halt-1`（SHA-256 `007d1eb8b8318a5d0e84a947aa00ca16816c2537de83d503d6d3f6b7b7489d80`）和 `ep2-psci-1`（`d17ca08583b5a240c81554ce6c917fa0bf561f23fd8e9c068502e897eb5bc891`）各通过 15 CPU/12 codec，并经独立复跑；它们早于 stage2 源对齐修复，不代表当前源码。`local-1` 为首次链接失败现场，后续使用 `--image-base=0`；`local-2`（SHA-256 `a18cc932acd2e403d33aa1ac09b0c44cb331cecd126b1bd9b6797c82ae555f4b`）与 `psci-1`（`6d9ff5b09b6d562d0fe3e6864736b98b4d3edc895bf3a8a048feb97f4c70e48f`）是修复前各 12 CPU/9 codec 的旧结果，不证明当前 EP2。旧 PSCI EL3 的成功被 SMC hook 掩盖，不能算有效支持证据。验证器曾把源地址等于目标地址时的 halt 误认为搬移后执行，现已按实际进入目标的轨迹区分，相关拒绝场景通过。
 
 此前只读前置检查曾确认 `/dev/pmsg0` 为 `c-w--w--w- root log`、pstore 已挂载且为空，当时电量 89%、32°C；这些是历史测量。2026-10-26 21:12 的软件 fastboot 往返复验已返回 Android，前后均确认 boot_completed=1、root 可用、槽位 b、内核 `4.14.348-openela-perf+`、修复 marker 与 boot_b 哈希一致，boot_id 已变化；离开 Android 前电量 99%、33.3°C、USB 供电。本次还验证了 shell-v2 和 root 退出码 37，但未进行六字节二进制传输探测，也未重新采集 pmsg 节点或 pstore。版本、分区哈希及私有证据位置见 [当前状态](../../../../docs/lg-g8-omarchy/STATUS.md#当前验收与下一步)。该复验已结束，没有后台设备任务；pmsg 校准仍因上述审批阻塞而未执行，未生成新的 boot.img，也没有真机 ENTER/TARGET 证据。
+
+## 有序写入前缀检查
+
+2026-10-27，在 `4dd141d` 后的工作树扩展验证器，使用 Unicorn 2.1.4 执行上表既有 Image，没有重新构建。两种产物仍各通过 17 个 CPU 场景及 12 组 codec 检查；halt 的 9 个、PSCI 的 7 个完整路径启用前缀审计，拒绝路径保留原有最终内存及写入范围检查。
+
+验证器按每次 console store 元素更新影子内存，立即由独立 codec 解码，并要求所有接受结果逐字段等于预期 ENTER 或 ENTER+TARGET。每个完整路径检查 103 个快照（含初始 console）：62 次拒绝、40 次有效 ENTER、1 次有效 ENTER+TARGET；下一指令边界完成 100 次整区内存核对，确认影子内存与 Unicorn 实际 console 一致。覆盖两条记录各自的 body、CRC、reserved 及 header，包含 TARGET header 半更新 `(0x43474244, 272, 136)`，此时 start>size，必须拒绝。
+
+模型假设每个 hook 报告的 store 元素完整且按顺序可见。STP 的两个元素分别重放，元素之间的状态是合成快照，实际内存核对发生在指令边界。初始 console 全部为 `0xcc`，未新增旧有效记录等初始内容场景。不模拟硬件缓存一致性、缓存行持久化顺序、撕裂写入、断电、真实固件 reset 或 reset 后 RAM 保留；通过不代表断电一致性、固件 PSCI 支持或真机自动恢复验收。
+
+两份报告均记录验证器 SHA-256 `fecfccdf902049e2e19ee5ab441f10e2032a33176b96a2eb9aa540dfeac9621a`，已与本次 `verify.py` 核对。
+
+| 报告 | SHA-256 |
+| --- | --- |
+| `out/entry-probe/ep2-halt-2/cpu-store-prefix-v2.json` | `6ce755df20ffd4b37a5b99dcd2d48307bad98f5ce4c22085fbe3239c09138ad4` |
+| `out/entry-probe/ep2-psci-2/cpu-store-prefix-v2.json` | `3168594bae85cbf1ae1851d18c0bd69b9d332d98553ec85330e92dd3931f0950` |
+
+既有 Image、原 `cpu.json` 和 v1 报告全部保留，v2 使用新文件名且拒绝覆盖。本次没有生成新的 Image / 启动镜像或访问手机，设备状态未重新测量。
 
 ## 本地使用
 

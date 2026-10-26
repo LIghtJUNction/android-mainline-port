@@ -1,6 +1,6 @@
 # LG G8 with mainline Linux and Omarchy
 
-当前状态（2026-10-26）：处于首次启动调试阶段。手机上的主线 Linux 与 Omarchy 尚未验收；没有足够证据证明主线内核已经执行。Android reboot 修复已在 `ea69a25` 提交推送；最小交接探针从该提交继续开发，各产物单独记录哈希。
+当前状态（2026-10-27）：处于首次启动调试阶段。手机上的主线 Linux 与 Omarchy 尚未验收；没有足够证据证明主线内核已经执行。Android reboot 修复已在 `ea69a25` 提交推送；最小交接探针从该提交继续开发，各产物单独记录哈希。
 
 | 项目 | 状态 | 证据与边界 |
 | --- | --- | --- |
@@ -9,7 +9,7 @@
 | 重启修复构建与 CPU 回归 | 离线通过 | 从已核对原始备份重新构建，与已安装候选逐字节一致；官方 avbtool 检查通过；8 项 Unicorn 对照通过。 |
 | 通用 QEMU Linux / initramfs / USB | 离线通过 | 已运行 Linux 7.3、原 `/init`、虚拟 USB 双向传输。通用 virt 板和 EDK2 不模拟 SM8150/LG 主板。 |
 | stock FDT → mainline FDT 跳板 | 真机失败 | 本机 CPU/QEMU 通过；手机接受 RAM boot 后没有 Linux USB 或可归属的 pstore。用户报告下载画面、左半屏花屏、随后重启。不能原样重复此候选。 |
-| 最小 ARM64 ENTER/TARGET 交接探针 | 离线通过 | EP2 halt/PSCI 两种 4096 字节产物，各通过 17 个 CPU 场景及 12 组独立格式检查；已修复未对齐访存、PSCI EL3 非法 SMC 及记录缺少完整性校验。三项修复及补充的 4 字节对齐源地址修复均完成独立复核；提交中断时序尚未验证。尚无真机执行或恢复证据。详见 [探针说明](../../tools/lg-g8/local-sim/entry-probe/README.md)。 |
+| 最小 ARM64 ENTER/TARGET 交接探针 | 离线通过 | EP2 halt/PSCI 两种 4096 字节产物，各通过 17 个 CPU 场景及 12 组独立格式检查；已修复未对齐访存、PSCI EL3 非法 SMC 及记录缺少完整性校验。三项修复及补充的 4 字节对齐源地址修复均完成独立复核；halt 的 9 个、PSCI 的 7 个完整路径各通过 103 个有序 store 元素前缀快照检查及 100 次指令边界内存核对。硬件缓存持久化、真实复位保留与恢复仍未验证，尚无真机执行证据。详见 [探针说明](../../tools/lg-g8/local-sim/entry-probe/README.md)。 |
 | pmsg 一次性校准脚本 | 离线通过 | 私有脚本修正远端退出码和等待期限后完成独立复核；实际 ARM64 helper 的完整写入、短写、写失败、打开失败四种模拟均通过。设备执行被自动审批拒绝，尚未上传或执行 helper。详见 [校准说明](../../tools/lg-g8/local-sim/entry-probe/README.md#保留校准计划尚未执行)。 |
 | 看门狗与早期挂死恢复 | 有源码线索 | 已核对 ABL 成功路径主动启用 APSS watchdog，以及后续缓存/MMU、BootStats 和条件 SMC 的静态行为；中断状态测试位有疑点，动态接口行为仍未知。失败候选的 initramfs 无模块，120 秒计时器从用户态计时。最终硬件状态及超时恢复尚未验收，详见 [看门狗证据](WATCHDOG-RECOVERY.md)。 |
 | 现存内核文件指纹采集 | 离线通过 | 13 个显式指定文件完成采集，Image / 历史 DTB 匹配旧 manifest；六项工具测试通过。当前配置与源码仍不能追认为历史构建输入，详见 [文件快照记录](WATCHDOG-RECOVERY.md#现存文件快照不追认历史构建来源)。 |
@@ -30,7 +30,7 @@
 
 唯一下一步：获得用户对指定手机上一次 helper 上传/root 执行、一次 `/dev/pmsg0` 追加、一次正常 Android reboot 和读回的明确批准后，按 [保留校准计划](../../tools/lg-g8/local-sim/entry-probe/README.md#保留校准计划尚未执行) 执行一次校准。当前直接阻塞来自自动审批：继承摘要中的助手授权判断不能证明用户同意，命令尚未执行。脚本已经完成本机检查和独立复核，细节集中记录在校准说明。pmsg 通过后仍需分别验证 console 保留/读回、裸探针 PSCI reset 和抵达 reset 前挂死的恢复，尚不能启动无人值守的新镜像迭代。尚不生成或发送新的设备启动镜像。已失败候选 `lg-native-3` 的 SHA-256 为 `b183fe857ee8e933272dad01cbd5199fc4bc6b303adc11a37c7b0fe3c23b3b78`，只做过 RAM 启动，不能原样重试。
 
-当前 EP2 本地探针报告为 `out/entry-probe/ep2-halt-2/cpu.json` 与 `out/entry-probe/ep2-psci-2/cpu.json`；旧 `local-2`/`psci-1` 仅保留为修复前历史结果。Android 实际 console 位于 `[0xb0000000,0xb0040000)`；旧 mainline console 位于 Android attach 范围外，旧空 pstore 不能证明内核没有执行。来源 blob、布局、产物哈希及 CPU 验证边界集中记录在探针说明。
+当前 EP2 本地探针报告为 `out/entry-probe/ep2-halt-2/cpu-store-prefix-v2.json` 与 `out/entry-probe/ep2-psci-2/cpu-store-prefix-v2.json`；2026-10-27 以既有 Image 完成有序 store 元素前缀检查，两份报告均记录验证器指纹，覆盖统计、报告哈希及模型限制见 [审计说明](../../tools/lg-g8/local-sim/entry-probe/README.md#有序写入前缀检查)。原 `cpu.json` 和 v1 报告保留；旧 `local-2`/`psci-1` 仅保留为修复前历史结果。本次没有构建新镜像或访问手机，设备状态未重新测量。Android 实际 console 位于 `[0xb0000000,0xb0040000)`；旧 mainline console 位于 Android attach 范围外，旧空 pstore 不能证明内核没有执行。来源 blob、布局、产物哈希及 CPU 验证边界集中记录在探针说明。
 
 私有证据根目录为主工作区的 `audit/`：`reboot-route-20261026/laf-kernel-ramtest-184155/`、`reboot-route-20261026/persistent-fix-184517/`、`runtime-native-handoff-20261026-172439/`、`persistent-reboot-acceptance-20261026/`。最新往返的逐命令退出码、协议返回、耗时和 Android 前后检查保存在独立目录 `persistent-reboot-recheck-20261026T211204+0800/result.json`；旧验收结果未覆盖。该 JSON 未记录源码 HEAD，提交关联由同次工作树检查与本段记录补充，私有 `context.md` 说明证据范围。本地修复报告仍为 `out/reboot-fix/acceptance-rebuild-20261026/` 和 `out/reboot-fix/acceptance-cpu-20261026.json`。
 

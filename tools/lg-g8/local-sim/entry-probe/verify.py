@@ -88,6 +88,71 @@ def codec_cases() -> list[str]:
             "cross-record-consistency"]
 
 
+class StorePrefixAudit:
+    """Inspect ordered store prefixes, assuming each reported store is fully visible."""
+
+    def __init__(self, zone: bytes, manifest: dict, expected: list[dict]):
+        self.zone = bytearray(zone)
+        self.manifest = manifest
+        self.expected = expected
+        self.counts = {"rejected": 0, "enter": 0, "target": 0}
+        self.regions = set()
+        self.header_states = []
+        self.pending = False
+        self.memory_checks = 0
+        self.inspect()
+
+    def inspect(self):
+        try:
+            items = record.records(record.decode(self.zone), self.manifest["nonce"],
+                                   target=self.manifest["target"],
+                                   stage2_offset=self.manifest["symbols"]["stage2"])
+        except ValueError:
+            self.counts["rejected"] += 1
+            return
+        if items != self.expected[:len(items)]:
+            raise ValueError("interrupted store prefix accepted incorrect captured state")
+        self.counts["enter" if len(items) == 1 else "target"] += 1
+
+    def write(self, address: int, size: int, value: int):
+        offset = address - self.manifest["console"]
+        if not 0 <= offset <= len(self.zone) - size:
+            raise ValueError("interruption audit store outside console")
+        self.zone[offset:offset + size] = (value & ((1 << (size * 8)) - 1)).to_bytes(size, "little")
+        self.pending = True
+        if offset < record.HEADER.size:
+            self.regions.add("header")
+            self.header_states.append(list(record.HEADER.unpack_from(self.zone)))
+        else:
+            index, within = divmod(offset - record.HEADER.size, record.RECORD.size)
+            region = "body" if within < record.BODY.size else "crc" if within < 132 else "reserved"
+            self.regions.add(f"{index + 1}:{region}")
+        self.inspect()
+
+    def check_memory(self, machine):
+        if self.pending:
+            actual = bytes(machine.mem_read(self.manifest["console"], len(self.zone)))
+            if actual != self.zone:
+                raise ValueError("store hook replay differs from executed console memory")
+            self.pending = False
+            self.memory_checks += 1
+
+    def finish(self) -> dict:
+        if self.pending or not self.memory_checks:
+            raise ValueError("interruption audit has unchecked stores")
+        required = {"header", "1:body", "1:crc", "1:reserved",
+                    "2:body", "2:crc", "2:reserved"}
+        if self.regions != required or not all(self.counts.values()):
+            raise ValueError("interruption audit did not cover all record stores and outcomes")
+        if [record.SIGNATURE, 272, 136] not in self.header_states:
+            raise ValueError("interruption audit missed the partial TARGET header update")
+        return {"scope": "ordered fully visible store elements, including split STP; no cache, torn-store or reset model",
+                "snapshots": sum(self.counts.values()), "outcomes": self.counts,
+                "instruction_memory_checks": self.memory_checks,
+                "regions": sorted(self.regions), "header_states": self.header_states,
+                "passed": True}
+
+
 def execute(image: bytes, manifest: dict, name: str, load: int = 0x90000000,
             el: int = 1, dtb: int = 0x96000000, injected_sctlr: int | None = None,
             expect: str = "target", sctlr: int = 0) -> dict:
@@ -119,9 +184,15 @@ def execute(image: bytes, manifest: dict, name: str, load: int = 0x90000000,
     relocated_halt = target + symbols["target_halt"] - symbols["stage2"]
     relocated_reset = target + symbols["reset_call"] - symbols["stage2"]
 
+    expected_records = [dict(zip(record.FIELDS, [phase, *inputs, el * 4, sctlr,
+                            pstate & 0x3C0, load, load + symbols["stage2"],
+                            target if phase == 2 else load])) for phase in (1, 2)]
+    audit = StorePrefixAudit(original_console, manifest, expected_records) if expect == "target" else None
     visited, entered_target = [], []
 
     def instruction(machine, address, size, context):
+        if audit is not None:
+            audit.check_memory(machine)
         if address == target and visited:
             entered_target.append(True)
         visited.append(address)
@@ -143,10 +214,14 @@ def execute(image: bytes, manifest: dict, name: str, load: int = 0x90000000,
             raise ValueError(f"{name}: unaligned {size}-byte access at {address:#x}")
         if access == UC_MEM_WRITE:
             writes.append((address, size))
+            if audit is not None and console <= address < console + record.ZONE_SIZE:
+                audit.write(address, size, value)
 
     cpu.hook_add(UC_HOOK_CODE, instruction)
     cpu.hook_add(UC_HOOK_MEM_WRITE | UC_HOOK_MEM_READ, memory_access)
     cpu.emu_start(load, 0, count=100000)
+    if audit is not None:
+        audit.check_memory(cpu)
     if stopped != [expect]:
         raise ValueError(f"{name}: unexpected stop {stopped}")
     if cpu.reg_read(regs.UC_ARM64_REG_SP) != 0xDEAD0000:
@@ -162,9 +237,7 @@ def execute(image: bytes, manifest: dict, name: str, load: int = 0x90000000,
         if [item["phase"] for item in decoded] != phases:
             raise ValueError(f"{name}: incorrect phase sequence")
         for item in decoded:
-            expected = dict(zip(record.FIELDS, [item["phase"], *inputs, el * 4, sctlr,
-                                               pstate & 0x3C0, load, load + symbols["stage2"],
-                                               target if item["phase"] == 2 else load]))
+            expected = expected_records[item["phase"] - 1]
             if item != expected:
                 raise ValueError(f"{name}: incorrect captured state: {item}, expected {expected}")
         extent = record.HEADER.size + record.RECORD.size * len(decoded)
@@ -191,7 +264,8 @@ def execute(image: bytes, manifest: dict, name: str, load: int = 0x90000000,
     return {"name": name, "el": el, "load": hex(load), "phases": [item["phase"] for item in decoded],
             "stop": stopped[0], "smc_requests": reset_requests,
             "sctlr": sctlr, "sctlr_injected_for_rejection": injected_sctlr,
-            "natural_alignment_checked": True, "passed": True}
+            "natural_alignment_checked": True,
+            "store_prefix_audit": audit.finish() if audit is not None else None, "passed": True}
 
 
 def main() -> int:
@@ -221,7 +295,9 @@ def main() -> int:
               execute(image, manifest, "target-code-overlap", load=manifest["target"], expect="blocked"),
               execute(image, manifest, "target-dtb-overlap", dtb=manifest["target"], expect="blocked")]
     result = {"scope": "actual ARM64 instructions and independent ecc=0 codec; cache instructions have no hardware coherency model; SMC intercepted; MMU/EE rejection inputs injected after MRS",
-              "image_sha256": manifest["image_sha256"], "codec_cases": codec_cases(),
+              "image_sha256": manifest["image_sha256"],
+              "verifier_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+              "codec_cases": codec_cases(),
               "cases": cases, "passed": True}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("x") as stream:

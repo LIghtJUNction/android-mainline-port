@@ -2,6 +2,16 @@
 
 按结论变化记录，当前验收与下一项设备实验以 [STATUS.md](STATUS.md#当前验收与下一步) 为准。原始设备资料留在私有工作区，不提交。
 
+## 2026-10-27：补齐 EP2 有序写入前缀验证
+
+在 `4dd141d` 后的本地工作树扩展验证器，Unicorn 2.1.4 执行既有 halt / PSCI 探针机器码，每个 console store 元素后重放影子内存并由独立 codec 检查；下一指令边界核对整个 console 的实际模拟内存。两种既有 Image 各通过 17 CPU / 12 codec；其中 halt 的 9 个、PSCI 的 7 个完整路径各检查 103 个快照（62 次拒绝、40 次有效 ENTER、1 次有效 ENTER+TARGET），完成 100 次指令边界内存核对。覆盖两条记录的 body、CRC、reserved 和 header，包括被拒绝的 TARGET header 半更新状态 `(0x43474244, 272, 136)`。所有接受结果逐字段匹配预期捕获状态。
+
+新报告为 `out/entry-probe/ep2-halt-2/cpu-store-prefix-v2.json` 与 `out/entry-probe/ep2-psci-2/cpu-store-prefix-v2.json`，均记录验证器 SHA-256 `fecfccdf902049e2e19ee5ab441f10e2032a33176b96a2eb9aa540dfeac9621a`；Image 和报告指纹见 [探针说明](../../tools/lg-g8/local-sim/entry-probe/README.md#有序写入前缀检查)。旧 Image、`cpu.json` 和 v1 报告保留。
+
+模型假设每个 store 元素完整且按 hook 顺序可见，STP 两个元素间的状态由重放合成；初始 console 为 `0xcc`，未新增旧有效记录等初始内容场景。不模拟硬件缓存一致性、缓存行持久化、撕裂写入、断电、真实固件 reset 或 reset 后 RAM 保留，不能作为断电一致性或自动恢复验收。
+
+本次没有构建新 Image / 启动镜像或访问手机。主线 Linux / Omarchy、console 保留和早期挂死恢复仍未验收；唯一下一项设备实验仍是受此前自动审批拒绝阻塞的一次性 pmsg 校准，需要指定操作的明确批准。最新已知手机状态仍为既有 fastboot 往返后返回 Android，本次未重新测量，无后台设备任务。
+
 ## 2026-10-26：采集现存内核文件指纹
 
 新增只读采集工具，记录显式指定文件的路径、大小和 SHA-256，并可与既有 handoff manifest 比较 Image / DTB。工具拒绝覆盖文件或链接、拒绝非普通输入，以 `0600` 创建报告；仓库根 `private/` 已加入忽略规则。六项本机边界测试通过。
