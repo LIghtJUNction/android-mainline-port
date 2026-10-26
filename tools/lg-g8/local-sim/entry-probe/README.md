@@ -59,7 +59,7 @@ halt 支持 EL1/EL2/EL3，PSCI 仅支持 EL1/EL2；PSCI 在 EL3 写日志前拒�
 
 历史产物保留：`ep2-halt-1`（SHA-256 `007d1eb8b8318a5d0e84a947aa00ca16816c2537de83d503d6d3f6b7b7489d80`）和 `ep2-psci-1`（`d17ca08583b5a240c81554ce6c917fa0bf561f23fd8e9c068502e897eb5bc891`）各通过 15 CPU/12 codec，并经独立复跑；它们早于 stage2 源对齐修复，不代表当前源码。`local-1` 为首次链接失败现场，后续使用 `--image-base=0`；`local-2`（SHA-256 `a18cc932acd2e403d33aa1ac09b0c44cb331cecd126b1bd9b6797c82ae555f4b`）与 `psci-1`（`6d9ff5b09b6d562d0fe3e6864736b98b4d3edc895bf3a8a048feb97f4c70e48f`）是修复前各 12 CPU/9 codec 的旧结果，不证明当前 EP2。旧 PSCI EL3 的成功被 SMC hook 掩盖，不能算有效支持证据。验证器曾把源地址等于目标地址时的 halt 误认为搬移后执行，现已按实际进入目标的轨迹区分，相关拒绝场景通过。
 
-此前只读前置检查曾确认 Android boot_completed=1、root 可用、槽位 b、内核 `4.14.348-openela-perf+`、电量 89%、32°C、USB 供电；`/dev/pmsg0` 为 `c-w--w--w- root log`，pstore 已挂载且为空。这是历史测量。最近一次主机 ADB 枚举仅确认目标手机在线，没有刷新上述属性、电量、分区哈希或 pstore。校准执行被拒绝后没有设备任务运行；尚未进行 pmsg 写入或重启读回，未生成新的 boot.img，也没有真机 ENTER/TARGET 证据。
+此前只读前置检查曾确认 `/dev/pmsg0` 为 `c-w--w--w- root log`、pstore 已挂载且为空，当时电量 89%、32°C；这些是历史测量。2026-10-26 21:12 的软件 fastboot 往返复验已返回 Android，前后均确认 boot_completed=1、root 可用、槽位 b、内核 `4.14.348-openela-perf+`、修复 marker 与 boot_b 哈希一致，boot_id 已变化；离开 Android 前电量 99%、33.3°C、USB 供电。本次还验证了 shell-v2 和 root 退出码 37，但未进行六字节二进制传输探测，也未重新采集 pmsg 节点或 pstore。版本、分区哈希及私有证据位置见 [当前状态](../../../../docs/lg-g8-omarchy/STATUS.md#当前验收与下一步)。该复验已结束，没有后台设备任务；pmsg 校准仍因上述审批阻塞而未执行，未生成新的 boot.img，也没有真机 ENTER/TARGET 证据。
 
 ## 本地使用
 

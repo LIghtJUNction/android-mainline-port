@@ -4,7 +4,7 @@
 
 | 项目 | 状态 | 证据与边界 |
 | --- | --- | --- |
-| Android 软件 fastboot 入口修复 | 真机通过（RAM 与落盘场景） | 临时启动场景约 8.5 秒进入 fastboot；已安装 boot_b 的复测约 9.79 秒进入 fastboot，协议返回 product=msmnile、unlocked=yes、current-slot=b；随后正常返回 Android。 |
+| Android 软件 fastboot 入口修复 | 真机通过（RAM 与落盘场景） | 临时启动场景约 8.5 秒进入 fastboot；已安装 boot_b 的首次验收约 9.79 秒，2026-10-26 21:12 复验为 9.947 秒。两次协议均返回 product=msmnile、unlocked=yes、current-slot=b，并返回 Android。 |
 | 修复镜像写入 boot_b 后的 Android | 真机通过 | 交接记录及本次只读复核均确认 boot_completed=1、root 可用、slot=_b、marker 存在、分区哈希与候选一致。详见 [修复说明](../../tools/lg-g8/local-sim/reboot-reason/README.md)。 |
 | 重启修复构建与 CPU 回归 | 离线通过 | 从已核对原始备份重新构建，与已安装候选逐字节一致；官方 avbtool 检查通过；8 项 Unicorn 对照通过。 |
 | 通用 QEMU Linux / initramfs / USB | 离线通过 | 已运行 Linux 7.3、原 `/init`、虚拟 USB 双向传输。通用 virt 板和 EDK2 不模拟 SM8150/LG 主板。 |
@@ -22,13 +22,15 @@
 
 已完成从当前 Android 使用已安装修复进入 fastboot、协议 getvar 检查、返回 Android及 root、槽位、marker、boot_b 哈希复核。最初执行被自动审批拦截；用户再次明确指令后执行成功。不要再次刷入同一修复。
 
-2026-10-26，此前只读检查曾确认正常 Android、boot_completed=1、root 可用、槽位 b、内核 `4.14.348-openela-perf+`，电量 89%、32°C、USB 供电；`/dev/pmsg0` 为 `c-w--w--w- root log`，pstore 已挂载且为空。这是历史测量。最近一次主机 ADB 枚举仅确认目标手机在线，没有刷新 Android 属性、root、电量、分区哈希或 pstore。一次性校准命令在启动前被自动审批拒绝，因此没有 helper 上传、pmsg 写入、正常 reboot 或校准结果，没有后台设备任务。本轮也没有刷写、擦除或换槽；同机其他模拟器不操作。恢复材料保留在本机统一 Backups 目录；恢复需要使用已校验原始 boot_b，不能使用受损的旧导出。
+2026-10-26 21:12，完成新一轮 Android→fastboot→Android 复验；同次工作会话核对的仓库 HEAD 为 `c4ffefeac91dfef0ae4a680b48dc4ae6b1881372`，不代表重新构建或安装了内核。进入 fastboot 用时 9.947 秒，三项协议检查通过；往返前后均确认 boot_completed=1、root uid=0、槽位 b、内核 `4.14.348-openela-perf+`、marker `lgg8_reboot_fix=pon27-imem68-v1`，boot_b SHA-256 均为 `fec418e5227a31927af27daf71d2225246f5adcf8dda38b5856200760b5205cd`，boot_id 已变化。离开 Android 前电量 99%、33.3°C、USB 供电。shell-v2 与 root 退出码 37 精确传回；六字节二进制传输探测未执行。
+
+此前只读检查中的电量 89%、32°C、`/dev/pmsg0` 为 `c-w--w--w- root log`、pstore 已挂载且为空均是历史测量；本次没有重新采集 pmsg 节点或 pstore。一次性 pmsg 校准命令此前在启动前被自动审批拒绝，尚无 helper 上传、pmsg 写入或其正常 Android reboot 读回结果。最新 fastboot 往返已结束，设备已返回 Android，没有后台设备任务。本次无分区刷写、擦除、换槽或候选启动；同机其他模拟器不操作。恢复材料保留在本机统一 Backups 目录；恢复需要使用已校验原始 boot_b，不能使用受损的旧导出。
 
 唯一下一步：获得用户对指定手机上一次 helper 上传/root 执行、一次 `/dev/pmsg0` 追加、一次正常 Android reboot 和读回的明确批准后，按 [保留校准计划](../../tools/lg-g8/local-sim/entry-probe/README.md#保留校准计划尚未执行) 执行一次校准。当前直接阻塞来自自动审批：继承摘要中的助手授权判断不能证明用户同意，命令尚未执行。脚本已经完成本机检查和独立复核，细节集中记录在校准说明。pmsg 通过后仍需分别验证 console 保留/读回、裸探针 PSCI reset 和抵达 reset 前挂死的恢复，尚不能启动无人值守的新镜像迭代。尚不生成或发送新的设备启动镜像。已失败候选 `lg-native-3` 的 SHA-256 为 `b183fe857ee8e933272dad01cbd5199fc4bc6b303adc11a37c7b0fe3c23b3b78`，只做过 RAM 启动，不能原样重试。
 
 当前 EP2 本地探针报告为 `out/entry-probe/ep2-halt-2/cpu.json` 与 `out/entry-probe/ep2-psci-2/cpu.json`；旧 `local-2`/`psci-1` 仅保留为修复前历史结果。Android 实际 console 位于 `[0xb0000000,0xb0040000)`；旧 mainline console 位于 Android attach 范围外，旧空 pstore 不能证明内核没有执行。来源 blob、布局、产物哈希及 CPU 验证边界集中记录在探针说明。
 
-私有证据根目录为主工作区的 `audit/`：`reboot-route-20261026/laf-kernel-ramtest-184155/`、`reboot-route-20261026/persistent-fix-184517/`、`runtime-native-handoff-20261026-172439/`、`persistent-reboot-acceptance-20261026/`。本次本地报告为 `out/reboot-fix/acceptance-rebuild-20261026/` 和 `out/reboot-fix/acceptance-cpu-20261026.json`。本次设备复测的预期、成功协议返回及 Android 返回检查保留在最后一个验收目录。
+私有证据根目录为主工作区的 `audit/`：`reboot-route-20261026/laf-kernel-ramtest-184155/`、`reboot-route-20261026/persistent-fix-184517/`、`runtime-native-handoff-20261026-172439/`、`persistent-reboot-acceptance-20261026/`。最新往返的逐命令退出码、协议返回、耗时和 Android 前后检查保存在独立目录 `persistent-reboot-recheck-20261026T211204+0800/result.json`；旧验收结果未覆盖。该 JSON 未记录源码 HEAD，提交关联由同次工作树检查与本段记录补充，私有 `context.md` 说明证据范围。本地修复报告仍为 `out/reboot-fix/acceptance-rebuild-20261026/` 和 `out/reboot-fix/acceptance-cpu-20261026.json`。
 
 以下保留 2026-10-25 的历史排查记录。历史的“仅本机”“无分区写入”和设备当时状态只适用于各自时点，不描述当前情况；关于异常 OEM 格式和损坏 runtime carveout 的推论已撤回，不能作为当前决策依据。
 
