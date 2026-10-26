@@ -46,6 +46,27 @@ dtc -I dts -O dtb -o out/lg-alphalm/board.dtb out/lg-alphalm/board.preprocessed.
 当前 tiny 内核关闭了 DRM，因此本机 USB shell 验证不能证明本文件的显示节点正确。
 固件 splash 内存保留也不表示 Linux 显示驱动已接管屏幕。
 
+## 离线启动检查与看门狗配置
+
+[boot 内存契约审计](../../tools/lg-g8/BOOT-CONTRACT.md) 核对已安装的 Android 修复 boot 中的载荷、RAM 和全部固定固件保留区；它不是新主线候选镜像，另行比较的 `patched.dtb` 仅为外部假设布局。Android header 的地址不能替代实际 ABL 装载证据；无冲突也不能证明可启动。
+
+[USB、DMA 与显示离线契约](../../tools/lg-g8/HARDWARE-CONTRACT.md) 记录 USB1 SID 声明一致、候选引用禁用的 USB3 QMP PHY，以及当前配置/FDT 未建立显示输出路径的边界。主线 Linux/Omarchy、USB、显示、pstore 读回及早期挂死恢复均未验收。
+
+[early-watchdog.config](configs/early-watchdog.config) 在 [linux-7.3-tiny.config](configs/linux-7.3-tiny.config) 后合并，将高通看门狗驱动编入内核。它已通过 Kconfig 解析和 ARM64 驱动对象编译，尚未构建完整内核或启动镜像。当前 `WATCHDOG_OPEN_TIMEOUT=0` 允许内核在用户态接管前持续发送心跳，不提供启动失败后的有限复位期限；验证记录和限制见 [看门狗说明](../../docs/lg-g8-omarchy/WATCHDOG-RECOVERY.md#内置驱动配置对象编译通过恢复仍未验收)。
+
+```sh
+# LGG8_KERNEL_SOURCE 指向上述匹配的源码；输出目录必须新建。
+mkdir out/early-watchdog-example
+sh "$LGG8_KERNEL_SOURCE/scripts/kconfig/merge_config.sh" -m \
+  -O out/early-watchdog-example \
+  devices/lg-alphalm/configs/linux-7.3-tiny.config \
+  devices/lg-alphalm/configs/early-watchdog.config
+make -C "$LGG8_KERNEL_SOURCE" O="$PWD/out/early-watchdog-example" \
+  ARCH=arm64 LLVM=1 olddefconfig
+make -C "$LGG8_KERNEL_SOURCE" O="$PWD/out/early-watchdog-example" \
+  ARCH=arm64 LLVM=1 -j4 drivers/watchdog/qcom-wdt.o
+```
+
 ## 启动软件
 
 [本机验证套件](../../tools/lg-g8/local-sim/README.md)会编译并核对这份源码，

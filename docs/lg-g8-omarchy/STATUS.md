@@ -11,7 +11,9 @@
 | stock FDT → mainline FDT 跳板 | 真机失败 | 本机 CPU/QEMU 通过；手机接受 RAM boot 后没有 Linux USB 或可归属的 pstore。用户报告下载画面、左半屏花屏、随后重启。不能原样重复此候选。 |
 | 最小 ARM64 ENTER/TARGET 交接探针 | 离线通过 | EP2 halt/PSCI 两种 4096 字节产物，各通过 17 个 CPU 场景及 12 组独立格式检查；已修复未对齐访存、PSCI EL3 非法 SMC 及记录缺少完整性校验。三项修复及补充的 4 字节对齐源地址修复均完成独立复核；halt 的 9 个、PSCI 的 7 个完整路径各通过 103 个有序 store 元素前缀快照检查及 100 次指令边界内存核对。硬件缓存持久化、真实复位保留与恢复仍未验证，尚无真机执行证据。详见 [探针说明](../../tools/lg-g8/local-sim/entry-probe/README.md)。 |
 | pmsg 一次性校准 | 真机失败 | 2026-10-27 已执行一次：helper 完整写入 63 字节，正常 reboot 返回 Android，boot_b 哈希匹配；重启后 pstore 为空，payload 未读回。失败层尚未区分保留、识别/导出和用户态清理。详见 [校准结果](PMSG-CALIBRATION.md)。 |
-| 看门狗与早期挂死恢复 | 有源码线索 | 已核对 ABL 成功路径主动启用 APSS watchdog，以及后续缓存/MMU、BootStats 和条件 SMC 的静态行为；中断状态测试位有疑点，动态接口行为仍未知。失败候选的 initramfs 无模块，120 秒计时器从用户态计时。最终硬件状态及超时恢复尚未验收，详见 [看门狗证据](WATCHDOG-RECOVERY.md)。 |
+| 看门狗与早期挂死恢复 | 独立配置解析、ARM64 对象编译通过；恢复未验收 | 已核对 ABL 主动启用 APSS watchdog 的静态路径，入口最终硬件状态仍未知。独立 [early-watchdog.config](../../devices/lg-alphalm/configs/early-watchdog.config) 将 QCOM_WDT 内置，Kconfig 解析与驱动对象编译通过；未构建完整 Image/boot。OPEN_TIMEOUT=0 可能让内核持续喂狗，不能保证用户态挂死后复位；接管前恢复、复位时序和去向仍未验收，详见 [看门狗证据](WATCHDOG-RECOVERY.md#内置驱动配置对象编译通过恢复仍未验收)。 |
+| boot 内存契约 | 离线审计与独立复审完成，31 项测试通过 | 对已安装 Android 修复 boot 的两棵 DTB 及外部假设 patched.dtb 完成真实输入重跑。header 地址假设存在冲突，不能当作 ABL 实际放置；patched 布局覆盖运行树固定/永久保留区，不代表已接入该 boot 或可启动。详见 [boot 契约](../../tools/lg-g8/BOOT-CONTRACT.md)。 |
+| USB、DMA 与显示契约 | 离线审计与独立复审完成，16 项测试通过；硬件未验收 | USB1 SID/mask 在运行树与候选中同为 0x140/0，无依据复制其他手机补丁；候选引用禁用的 QMP PHY。两树均无 simple-framebuffer，候选关闭 DRM，尚未建立显示输出路径。实际 DMA 域、USB 枚举与显示均未知，详见 [硬件契约](../../tools/lg-g8/HARDWARE-CONTRACT.md)。 |
 | 现存内核文件指纹采集 | 离线通过 | 13 个显式指定文件完成采集，Image / 历史 DTB 匹配旧 manifest；六项工具测试通过。当前配置与源码仍不能追认为历史构建输入，详见 [文件快照记录](WATCHDOG-RECOVERY.md#现存文件快照不追认历史构建来源)。 |
 | warm reset 日志保留与读回 | 真机失败 | 本次 Android pmsg 校准写入成功、正常重启返回，但读回失败；空 pstore 不能单独证明 DRAM 内容丢失。console 和裸探针 PSCI 路径仍未验证，详见 [读回定位](PMSG-CALIBRATION.md#只读定位及证据边界)。 |
 | 主线显示、触控及 Omarchy | 外部移植调研完成，G8 未验收 | 已核查同 SM8150 项目的启动、USB、显示与桌面记录，见 [移植对照](MAINLINE-PORTING-RESEARCH.md)；其他设备成果不代表 G8 已启动。当前 tiny kernel 关闭 DRM。 |
@@ -36,7 +38,15 @@
 
 下一步补齐未采 init/APEX 规则、更早服务/脚本及触发条件，核对 PATH、早期快照 helper 的 Android 运行兼容性、执行位置/标签、运行权限和暂存生命周期，形成可审查的启动修改与单次实验材料；不重跑同一校准。当前阻塞是日志读回链路尚未建立，现有证据不足以定位内容首次丢失的位置。实验身份、结果及边界见 [校准记录](PMSG-CALIBRATION.md)。console 保留/读回、裸探针 PSCI reset 和抵达 reset 前挂死的恢复仍需分别验证，尚不能启动无人值守的新镜像迭代。尚不生成或发送新的设备启动镜像。已失败候选 `lg-native-3` 的 SHA-256 为 `b183fe857ee8e933272dad01cbd5199fc4bc6b303adc11a37c7b0fe3c23b3b78`，只做过 RAM 启动，不能原样重试。
 
-公开移植调查已形成 [固定来源对照](MAINLINE-PORTING-RESEARCH.md)：Hotdog 的 ABL 直接启动和 USB SMMU 调试、OnePlus 7 Pro 的 Arch/Hyprland 手机交互层，以及上游与 LG downstream 资料。下一步离线比较 LG 的 ABL/DTBO 契约、完整固件保留内存、framebuffer 带宽与 USB SMMU；外部作者的硬件记录不计入 G8 验收，不照搬板级地址或关闭 watchdog。研究不改变上述设备实验前提。
+公开移植调查已形成 [固定来源对照](MAINLINE-PORTING-RESEARCH.md)：Hotdog 的 ABL 直接启动和 USB SMMU 调试、OnePlus 7 Pro 的 Arch/Hyprland 手机交互层，以及上游与 LG downstream 资料。随后已完成 [boot 内存离线审计](../../tools/lg-g8/BOOT-CONTRACT.md) 与 [USB、DMA、显示离线审计](../../tools/lg-g8/HARDWARE-CONTRACT.md)，两路均完成独立复审，本机最终分别 31 项、16 项测试通过，真实输入已用修正后的工具重跑。外部作者的硬件记录仍不计入 G8 验收，不照搬板级地址或关闭 watchdog。
+
+boot 审计输入是已有、已安装的 Android reboot 修复 boot，不是新主线候选；`out/local-sim/dtb/patched.dtb` 仅作外部假设布局，并不在该 boot 的 DTB 表中。按 header 字段直接解释装载地址时，kernel/ramdisk、ramdisk/DTB 各有一处交叠，三个载荷均在 runtime RAM 外；这否定直接地址解释，不能证明 ABL 实际放置错误。两棵嵌入 FDT 均完整有效，但 RAM 为零长度占位，与运行树相比各有 5 段固定保留区覆盖缺口，涉及 SLPI、CDSP、QSEECom、CDSP secure 和 ramoops；最终 overlays/fixups 尚未知。patched 布局的三段 RAM 与运行树一致，覆盖全部固定及永久保留区并集，自身固定保留区无交叠；套用相同 header 地址假设仍有载荷地址问题。gzip 内核运行大小、解压目的地与 scratch、ABL 最终选树/放置和生效内存布局仍未建立。三个真实场景均退出 1，表示声明地址场景有冲突；报告不证明可启动。复审报告为 `out/boot-contract-review-20261027-f6fb6105/{embedded-0-review-report.json,embedded-1-review-report.json,patched-prospective-review-report.json}`，精确命令、退出码及输入/报告哈希见同目录 `verification.json`；原输入哈希保持不变。
+
+USB 审计确认两树 USB1 SID/mask 同为 `0x140/0`；运行树连接在 wrapper，候选连接在 DWC3 子节点，结合 DMA 设备选择声明，位置差异本身不足以判错。候选 DWC3 的 USB3 QMP PHY 引用可解析，但 provider 被禁用，其启动影响尚未复现。配置与已核对命令行仅支持条件性的 translated/strict 默认策略，实际 SMMU attach/domain 和 DMA 数据流未知。两树普通显示 SID/mask 同为 `0x800/0x420`，均保留 `0x9d200000 + 0x1200000` 的 splash/display-dump 范围，但均无 simple-framebuffer；候选关闭 DRM，保留区不能提供可信的分辨率、stride、格式或 scanout 证据。真实报告为 `out/hardware-contract-audit-20261027/report-review.json`：两份 FDT 全量校验通过，所选范围无 phandle/引用或固定保留区解析错误；工具退出 0 只表示报告生成成功。下一步仍缺 QMP 电源/复用及预期 USB 速度路径、实际 DMA 域与数据流、可信显示布局和 clock/interconnect 状态，不据此修改 DTS 或启动设备实验。
+
+看门狗新增独立 [early-watchdog.config](../../devices/lg-alphalm/configs/early-watchdog.config)，在 tiny 基线后合并，将 `CONFIG_QCOM_WDT=m` 改为 `y`；Kconfig 解析和 AArch64 `qcom-wdt.o` 编译均退出 0，未构建完整 Image/boot。证据为 `out/early-watchdog-20261027-1/{manifest.json,build.log,config-review.json}`。`CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y` 与 `CONFIG_WATCHDOG_OPEN_TIMEOUT=0` 保持原值：后者允许内核在用户态首次打开 watchdog 前持续发送心跳，只要 worker 仍运行，用户态卡住也可能不复位。该片段仅提前驱动可用时机，probe 成功、接管前后的恢复、有限启动期限及复位后去向仍需独立验证，详见 [对象编译与持续心跳限制](WATCHDOG-RECOVERY.md#内置驱动配置对象编译通过恢复仍未验收)。
+
+上述离线工作未访问设备、生成新启动镜像或修改 DTS、timeout 策略及外部源码；`out/` 证据被 Git 忽略，敏感原文不提交。主线 Linux/Omarchy、USB、显示、pstore 读回与早期挂死恢复均未验收；研究不改变上述设备实验前提。
 
 当前 EP2 本地探针报告为 `out/entry-probe/ep2-halt-2/cpu-store-prefix-v2.json` 与 `out/entry-probe/ep2-psci-2/cpu-store-prefix-v2.json`；2026-10-27 以既有 Image 完成有序 store 元素前缀检查，两份报告均记录验证器指纹，覆盖统计、报告哈希及模型限制见 [审计说明](../../tools/lg-g8/local-sim/entry-probe/README.md#有序写入前缀检查)。原 `cpu.json` 和 v1 报告保留；旧 `local-2`/`psci-1` 仅保留为修复前历史结果。该次离线前缀检查没有构建新镜像或访问手机；随后 pmsg 校准与设备状态见上文。Android 实际 console 位于 `[0xb0000000,0xb0040000)`；旧 mainline console 位于 Android attach 范围外，旧空 pstore 不能证明内核没有执行。来源 blob、布局、产物哈希及 CPU 验证边界集中记录在探针说明。
 

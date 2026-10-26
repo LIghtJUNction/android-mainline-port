@@ -1,6 +1,6 @@
 # LG G8 看门狗与自动恢复证据
 
-2026-10-26，基于集成仓 `dc95bad170bfe58d9231814d7790be293fe6b3d5` 之后的只读本地调查。主线 Linux / Omarchy 尚未在手机验收，当前仍不能开始无人值守的新镜像迭代。本次没有设备命令、寄存器访问、配置修改、镜像构建或候选启动。
+原始调查于 2026-10-26 在集成仓 `dc95bad170bfe58d9231814d7790be293fe6b3d5` 之后进行，仅只读分析本地材料，没有设备命令、寄存器访问、配置修改、镜像构建或候选启动。2026-10-27 新增了下文的独立内置驱动配置片段，并完成 Kconfig 解析和 ARM64 驱动对象编译；该项工作未访问设备或构建完整启动镜像。主线 Linux / Omarchy 尚未在手机验收，当前仍不能开始无人值守的新镜像迭代。
 
 ## 目标、路线与完成标准
 
@@ -126,7 +126,7 @@ exec /init
 
 本地 `drivers/watchdog/qcom-wdt.c` 的匹配表接受 fallback `qcom,kpss-wdt`。probe 先取得 MMIO、输入时钟和频率等资源；默认 timeout 为不超过 max_timeout 的 30 秒，并接受 DT 的 timeout 设置。只有读到硬件 EN 已运行时，才调用 start 关闭、重设 bark/bite、重新使能，并标记 `WDOG_HW_RUNNING`，随后向 watchdog core 注册。
 
-这段代码说明“已运行的看门狗被驱动发现后如何接管”。把 `CONFIG_QCOM_WDT=m` 改为 `y` 只能使驱动可能更早进入 probe；不覆盖 probe 之前的执行，也不能保证资源获取成功或复位后回到 Android。本次没有修改配置，不能把这项建议写成自动恢复已解决。
+这段代码说明“已运行的看门狗被驱动发现后如何接管”。把 `CONFIG_QCOM_WDT=m` 改为 `y` 只能使驱动可能更早进入 probe；不覆盖 probe 之前的执行，也不能保证资源获取成功或复位后回到 Android。下节新增片段已完成对象编译，仍不能把它写成自动恢复已解决。
 
 源码目录没有 Git 元数据。Makefile 标记 7.3.0，生成 release 为 `7.3.0-sm8150`，编译信息标记 clang/LLD 23.1.3；这些都是本地文件标签，不能替代已核实的上游提交。相关指纹如下，路径相对私有工作区：
 
@@ -137,6 +137,14 @@ exec /init
 | `out/kernel-uefi-tiny/.config` | `c8ee45c025a01e35cf488e7ada4a60ef321b4bd0560af07ed6027ff3b8efceb2` |
 | `out/kernel-v50/.config` | `2453288a29469507adf5fc1e235e1b4ff1d4eb7115af8bfa67490ad616f8e9ab` |
 | `audit/reboot-route-20261026/vendor-boot-b.config` | `0e28ed4033e38d0e35a288e60da786248c17e9187a09b5a73b70fd30f1721ec7` |
+
+## 内置驱动配置：对象编译通过，恢复仍未验收
+
+2026-10-27，新增独立片段 [early-watchdog.config](../../devices/lg-alphalm/configs/early-watchdog.config)，在 `linux-7.3-tiny.config` 之后合并，仅显式将 `CONFIG_QCOM_WDT=m` 改为 `y`。在全新 `O=` 目录运行 `merge_config.sh -m`、`make ARCH=arm64 LLVM=1 olddefconfig` 和 `make ARCH=arm64 LLVM=1 -j4 drivers/watchdog/qcom-wdt.o`，均退出 0。对象为 AArch64 ELF relocatable，12296 字节，SHA-256 为 `3533621a6f8d7e36d65aab882e151b0e0cd4ca6dad5a63add1ead4143272facd`。
+
+解析后的配置与基线相比，除了 `QCOM_WDT=m→y`，仅新增自动探测的编译器能力符号 `CONFIG_CC_CAN_LINK=y`。`CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y` 和 `CONFIG_WATCHDOG_OPEN_TIMEOUT=0` 保持原值。解析配置 SHA-256 为 `ca72fb3962d20675bc0fa68ae390220cf69d5e01eaa887d48f3fb7e205a78d9d`；片段 SHA-256 为 `5ae146d6fa1f570e83ed44922842506a009038cd89d31c4f3eabb40eb9407947`。命令、输入指纹、构建日志与配置差异保存在 Git 忽略的 `out/early-watchdog-20261027-1/{manifest.json,build.log,config-review.json}`。没有构建完整 Image 或 boot 镜像，没有修改外部内核源码或访问手机。
+
+还需区分驱动接管与启动期限：当前 watchdog core 的 `watchdog_set_open_deadline()` 在 `open_timeout=0` 时设置 `KTIME_MAX`，可在用户态首次打开 watchdog 前持续发送心跳，重新开始硬件复位倒计时。只要内核 worker 仍能运行，即使用户态启动卡住，也可能一直不复位。模块参数 `watchdog.open_timeout` 可覆盖该值，但本次没有修改期限策略；有限期限、用户态接管/停止行为以及复位去向均需单独设计和验证。该片段只提前驱动可用时机，不能充当早期恢复保证。
 
 ## 现存文件快照：不追认历史构建来源
 

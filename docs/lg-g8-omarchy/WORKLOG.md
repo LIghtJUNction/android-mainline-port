@@ -2,6 +2,20 @@
 
 按结论变化记录，当前验收与下一项设备实验以 [STATUS.md](STATUS.md#当前验收与下一步) 为准。原始设备资料留在私有工作区，不提交。
 
+## 2026-10-27：完成 boot 内存与硬件离线契约实施及独立复审
+
+完成 [boot 内存契约](../../tools/lg-g8/BOOT-CONTRACT.md) 和 [USB、DMA 与显示契约](../../tools/lg-g8/HARDWARE-CONTRACT.md) 的本机实施、独立复审及真实输入复跑。复审补齐输入和内核语义边界后，最终分别为 31 项与 16 项测试全部通过；这些是工具的本机验证结果，不是启动或硬件验收。boot 工具对不支持或歧义输入拒绝推断，硬件工具对配置、命令行及保留区证据不足保留 unknown；报告独占创建并记录输入指纹。
+
+审计对象 `out/reboot-fix/acceptance-rebuild-20261026/boot.img` 是已安装 Android 的修复 boot，不是新的主线候选；已有 `out/local-sim/dtb/patched.dtb` 仅作为外部假设布局，不在该 boot 的两棵 DTB 表中。复审后对两棵嵌入 DTB 和该外部布局的三个场景重新审计，均退出 1：按 header 字段直接假设物理地址时，kernel/ramdisk、ramdisk/DTB 交叠，三个载荷均在 runtime RAM 外。这否定的是地址解释，不能证明 ABL 实际装载错误。gzip 内核运行范围、解压放置及最终 DTB 选择/fixup 仍未知；嵌入树的零长度 RAM 占位不能认定为空 RAM，两棵树各有五段固定保留区覆盖缺口。patched 布局覆盖 runtime 固定及永久保留区并集、三段 RAM 一致，也不证明镜像可启动。
+
+boot 复审最终报告位于 `out/boot-contract-review-20261027-f6fb6105/{embedded-0-review-report.json,embedded-1-review-report.json,patched-prospective-review-report.json}`，精确命令、退出码、报告与输入哈希见同目录 `verification.json`；初次实施证据保留于 `out/boot-contract-20261027-f6fb6105/`。原 boot、runtime FDT 和 patched DTB 输入哈希均未变。硬件最终报告为 `out/hardware-contract-audit-20261027/report-review.json`，权限 `0600`，两份 FDT 完整校验均为 0；工具退出 0 只表示报告生成成功。此前报告保留，以上 `out/` 目录均被 Git 忽略，原始诊断与敏感资料不提交。
+
+硬件核对确认 LG runtime 与候选 USB1 均声明 SID `0x140`、mask `0`，没有依据复制其他手机的 SID 补丁；候选 DWC3 引用已禁用的 USB3 QMP PHY，是尚未验证实际影响的依赖缺口。候选配置下的 translated、strict=true 仅为条件性默认 IOMMU 策略，实际设备 domain 与 stock 策略仍 unknown。两份树均无 simple-framebuffer，候选配置关闭 DRM；保留 splash 区间不足以建立显示路径。未据此修改板级 DTS，也未把 USB 枚举、DMA、显示或带宽状态写成已验证。
+
+[watchdog 记录](WATCHDOG-RECOVERY.md#内置驱动配置对象编译通过恢复仍未验收) 中的独立配置片段仅将 `QCOM_WDT=m` 改为 `y`，Kconfig 合并、olddefconfig 和 ARM64 `drivers/watchdog/qcom-wdt.o` 编译均退出 0；自动能力符号另新增 `CONFIG_CC_CAN_LINK=y`。证据在 `out/early-watchdog-20261027-1/{manifest.json,build.log,config-review.json}`。这只是对象编译范围；`WATCHDOG_HANDLE_BOOT_ENABLED=y`、`WATCHDOG_OPEN_TIMEOUT=0` 保持原值，后者可让 core 在用户态首次打开前持续发送心跳，即使用户态卡住也可能不复位。驱动 probe 前挂死、接管成功、有限期限与复位去向均未验收，不能称自动恢复已解决。
+
+本轮未访问设备，未生成完整 Image 或 boot 镜像，未修改 DTS、timeout 或外部源码，未运行或等待 CI。主线 Linux / Omarchy、USB、显示、pstore / console / EP2 读回及早期挂死恢复仍未验收。此前一次 pmsg 校准的写入与正常 reboot 成功、读回失败，以及更早的审批阻塞均保留为各自历史状态；本轮离线实施不构成重试或新候选实验的授权。
+
 ## 2026-10-27：对照其他手机的主线 Linux 与桌面移植
 
 通过网页发现项目，再用 gh 核对固定提交、实际补丁、设备树、构建配方和调试记录，并行调查同 SM8150、相邻代 LG 和其他手机移植。形成 [公开移植对照](MAINLINE-PORTING-RESEARCH.md)，重点核查 OnePlus 7T Pro 的 ABL 直接启动与 USB SMMU 调试，以及 OnePlus 7 Pro 的 Arch Linux ARM、Hyprland 和共享手机交互层。完整 Omarchy/theme-repository 安装在后者仍属未来工作；这些外部作者记录不是本会话 G8 真机验收。
