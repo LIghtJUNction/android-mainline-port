@@ -25,6 +25,10 @@
 
 ## 当前验收与下一步
 
+后续离线排查发现完整载荷 shim 在源地址仅按 4 字节对齐时，其 64 位常量读取会未对齐；实际 ABL 装载地址和对齐检查状态未知，因此这不是已确认的真机故障。独立 [align4 离线模型](../../tools/lg-g8/local-sim/abl-handoff-align4/README.md) 已将常量读取和载荷复制改为 32 位访问，归档源码/载荷并重建核对制品，使用显式异常代替 assert；普通和 Python 优化模式均通过 76 项合成 CPU 场景、4 项未对齐负对照及 9 项非法构建输入拒绝。DTB 地址已按 ARM64 入口约定收紧为 8 字节对齐，拒绝路径验证连续 128 条 blocked 指令，初始 DAIF 未屏蔽也有覆盖。没有替换原 shim；当前工具未验收完整载荷，缓存只检查清理地址轨迹，hardware_ready=false。此前私有补丁的约 29 MB 模拟不算当前工具的验收证据，历史补丁与报告位于主工作区 `private/shim-align4-offline-20261027-1/`。
+
+新增 EP2 离线读回器区分原始 RAM 区与 pstore payload，错误输入生成 inconclusive，报告以 0600 排他创建；7 项合成记录/文件错误测试通过，同轮 local-sim 共 78 项回归通过。console 重启保留、Android 导出及早期挂死恢复仍未验收。主机控制器修正版对采样故障、优化模式等执行了模拟测试，私有材料位于 `private/usb2-controller-offline-fix-20261027-2/`；独立审查发现镜像校验与发送之间可能被替换，且 fastboot 目标与所观察的 USB 端口尚未绑定；完整控制器集成和设备测试也未完成，不能直接用于手机。以上工作未操作设备。
+
 已完成从当前 Android 使用已安装修复进入 fastboot、协议 getvar 检查、返回 Android及 root、槽位、marker、boot_b 哈希复核。最初执行被自动审批拦截；用户再次明确指令后执行成功。不要再次刷入同一修复。
 
 2026-10-26 21:12，完成新一轮 Android→fastboot→Android 复验；同次工作会话核对的仓库 HEAD 为 `c4ffefeac91dfef0ae4a680b48dc4ae6b1881372`，不代表重新构建或安装了内核。进入 fastboot 用时 9.947 秒，三项协议检查通过；往返前后均确认 boot_completed=1、root uid=0、槽位 b、内核 `4.14.348-openela-perf+`、marker `lgg8_reboot_fix=pon27-imem68-v1`，boot_b SHA-256 均为 `fec418e5227a31927af27daf71d2225246f5adcf8dda38b5856200760b5205cd`，boot_id 已变化。离开 Android 前电量 99%、33.3°C、USB 供电。shell-v2 与 root 退出码 37 精确传回；六字节二进制传输探测未执行。

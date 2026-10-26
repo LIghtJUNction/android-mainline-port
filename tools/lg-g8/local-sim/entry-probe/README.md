@@ -93,6 +93,11 @@ python3 -I tools/lg-g8/local-sim/entry-probe/build.py \
   --out out/entry-probe/example-fresh
 uv run --script tools/lg-g8/local-sim/entry-probe/verify.py \
   out/entry-probe/example-fresh --out out/entry-probe/example-fresh/cpu.json
+python3 -I tools/lg-g8/local-sim/entry-probe/record.py \
+  collected-console.bin --manifest out/entry-probe/example-fresh/manifest.json \
+  --format pstore-console --out out/entry-probe/readback-report.json
 ```
+
+离线读回器显式区分 `pstore-console`（导出的纯 payload，无 12 字节 RAM 头）与 `raw-zone`（恰好 0x40000 字节的原始 console RAM 区）。输入必须是原始二进制文件，不能使用十六进制文本、终端输出、日志包裹内容或未经解码的 base64；不要通过会转换换行或字符编码的文本通道保存。它只接受完整的 ENTER 或 ENTER+TARGET 记录，并核对 manifest nonce、CRC、阶段、地址和共同状态；不会从混合日志中搜寻片段。输入或 manifest 缺失、不可读、manifest JSON/结构错误以及记录无效，均生成 `inconclusive` 报告并返回 1；已读到的文件记录 SHA-256，未读到的字段为 null。报告以 0600 排他创建，不覆盖证据；输出路径已存在或无法创建时直接失败，须使用新的可写路径。该解码器不能恢复此前没有导出的 console 内容。测试只覆盖合成记录和本机文件错误；实机 console 的采集、Android 导出、重启后保留以及早期挂死恢复均未验收，`enter-target` 也不证明 Linux 启动或 reset 成功。
 
 构建只生成 raw ARM64 Image、ELF、符号和 manifest，不包装可直接上机的 boot.img。该阶段尚未建立恢复和保留校准，不应将本地测试产物直接送到手机。离线自测会固定合成测试输入以便复现；真机必须换新 nonce。
