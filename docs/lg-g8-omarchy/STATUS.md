@@ -30,13 +30,15 @@
 
 随后只读核对同一 boot_id 的 Android 状态、带名称的 ramoops 参数、init 规则及系统启动归档元数据；pstore 仍空，未发现本次 pmsg 被搬运或删除的证据，亦未排除这些路径。设备最后实测为此次 reboot 后已完成启动的 Android，本会话设备操作已结束，没有后台设备任务。没有重试写入或 reboot，无分区刷写、擦除、换槽或候选启动；同机其他模拟器不操作。恢复材料保留在本机统一 Backups 目录，恢复须使用已校验原始 boot_b。
 
-唯一下一步：核对实际运行 Android 版本的 pstore 消费与删除实现，设计位于这些消费者之前的只读采集，以区分内核未导出与用户态清理；不重跑同一校准。当前阻塞是日志读回链路尚未建立，现有证据不足以定位内容首次丢失的位置。实验身份、结果及边界见 [校准记录](PMSG-CALIBRATION.md)。console 保留/读回、裸探针 PSCI reset 和抵达 reset 前挂死的恢复仍需分别验证，尚不能启动无人值守的新镜像迭代。尚不生成或发送新的设备启动镜像。已失败候选 `lg-native-3` 的 SHA-256 为 `b183fe857ee8e933272dad01cbd5199fc4bc6b303adc11a37c7b0fe3c23b3b78`，只做过 RAM 启动，不能原样重试。
+已只读采集并校验实际 `services.jar`、init 规则、`logcat`、`logd` 和 `liblog.so` 共七个文件。BootReceiver 已查归档路径没有直接删除源文件；原生普通 pmsg 读取没有发现直接删除，`logcat -L -c` 则有明确 pstore unlink 分支。已采集规则中的 logcatd 服务和 clear action 均不满足这组参数，但实际 logcatd 实体及本次执行状态尚未核实，不能排除其他清理。pstore mount 与首次 `start logd` 属于同一 `on init`，mount 在前；已设计挂载后同步快照并在同一次启动中回收对照，尚未实现或部署。
+
+下一步补齐 init 导入集合、更早服务、logcatd 实体及触发条件，再验证早期快照 helper 的运行权限、暂存生命周期和本机边界行为；不重跑同一校准。当前阻塞是日志读回链路尚未建立，现有证据不足以定位内容首次丢失的位置。实验身份、结果及边界见 [校准记录](PMSG-CALIBRATION.md)。console 保留/读回、裸探针 PSCI reset 和抵达 reset 前挂死的恢复仍需分别验证，尚不能启动无人值守的新镜像迭代。尚不生成或发送新的设备启动镜像。已失败候选 `lg-native-3` 的 SHA-256 为 `b183fe857ee8e933272dad01cbd5199fc4bc6b303adc11a37c7b0fe3c23b3b78`，只做过 RAM 启动，不能原样重试。
 
 当前 EP2 本地探针报告为 `out/entry-probe/ep2-halt-2/cpu-store-prefix-v2.json` 与 `out/entry-probe/ep2-psci-2/cpu-store-prefix-v2.json`；2026-10-27 以既有 Image 完成有序 store 元素前缀检查，两份报告均记录验证器指纹，覆盖统计、报告哈希及模型限制见 [审计说明](../../tools/lg-g8/local-sim/entry-probe/README.md#有序写入前缀检查)。原 `cpu.json` 和 v1 报告保留；旧 `local-2`/`psci-1` 仅保留为修复前历史结果。该次离线前缀检查没有构建新镜像或访问手机；随后 pmsg 校准与设备状态见上文。Android 实际 console 位于 `[0xb0000000,0xb0040000)`；旧 mainline console 位于 Android attach 范围外，旧空 pstore 不能证明内核没有执行。来源 blob、布局、产物哈希及 CPU 验证边界集中记录在探针说明。
 
 私有证据根目录为主工作区的 `audit/`：`reboot-route-20261026/laf-kernel-ramtest-184155/`、`reboot-route-20261026/persistent-fix-184517/`、`runtime-native-handoff-20261026-172439/`、`persistent-reboot-acceptance-20261026/`。最新往返的逐命令退出码、协议返回、耗时和 Android 前后检查保存在独立目录 `persistent-reboot-recheck-20261026T211204+0800/result.json`；旧验收结果未覆盖。该 JSON 未记录源码 HEAD，提交关联由同次工作树检查与本段记录补充，私有 `context.md` 说明证据范围。本地修复报告仍为 `out/reboot-fix/acceptance-rebuild-20261026/` 和 `out/reboot-fix/acceptance-cpu-20261026.json`。
 
-本次 pmsg 证据为主工作区 `audit/pmsg-calibration-20261026-once-1/`（目录名沿用预先指定日期，实际执行为 2026-10-27）、`private/pmsg-calibration-20261027-once-1/` 和 `private/pmsg-readback-diagnosis-20261027-once-1/`；包含敏感原文，不提交。证据指纹与各自范围见 [校准记录](PMSG-CALIBRATION.md#私有证据)。
+本次 pmsg 证据为主工作区 `audit/pmsg-calibration-20261026-once-1/`（目录名沿用预先指定日期，实际执行为 2026-10-27）、`private/pmsg-calibration-20261027-once-1/`、`private/pmsg-readback-diagnosis-20261027-once-1/` 和 `private/android-pstore-consumers-20261027-readonly-1/`；包含敏感原文，不提交。证据指纹与各自范围见 [校准记录](PMSG-CALIBRATION.md#私有证据)。
 
 以下保留 2026-10-25 的历史排查记录。历史的“仅本机”“无分区写入”和设备当时状态只适用于各自时点，不描述当前情况；关于异常 OEM 格式和损坏 runtime carveout 的推论已撤回，不能作为当前决策依据。
 

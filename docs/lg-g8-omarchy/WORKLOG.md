@@ -2,6 +2,14 @@
 
 按结论变化记录，当前验收与下一项设备实验以 [STATUS.md](STATUS.md#当前验收与下一步) 为准。原始设备资料留在私有工作区，不提交。
 
+## 2026-10-27：核对实际 pstore 消费者并设计更早快照
+
+在校准后的同一次 Android 启动中，只读采集实际 `services.jar`、三份 init 规则、`logcat`、`logd` 和 `liblog.so`，七份文件的长度与 SHA-256 均核对通过；三个 DEX 的 checksum 和反汇编检查通过。BootReceiver 已查归档路径没有直接删除源文件，直接 `File.delete()` 目标是临时 tombstone 和 shutdown metrics，不能归因为 pmsg 删除。
+
+实际原生组件的普通 `PmsgRead` 以只读方式打开旧 pmsg，已查读取/关闭函数没有直接 unlink；logd 启动时存在可达的旧事件标签读取链。`logcat -L -c` 有显式删除 pmsg 的分支，但已采集规则中的 logcatd 服务和 clear action 分别缺少 `-c`、`-L`，不能拼成一次删除。关键机器码、符号和路径已独立复核，仍无本次实际删除的证据，亦未穷尽其他消费者。
+
+已确认 pstore mount 在同一 `on init` 中早于首次 `start logd`，据此设计挂载后同步采集到启动期 tmpfs、限时限量、同次启动回收并对照的方案。完整导入规则、更早服务、logcatd 实体、SELinux 和暂存生命周期仍待核对；方案没有实现或部署。文件指纹、静态地址、快照设计与私有证据位置见 [校准记录](PMSG-CALIBRATION.md)。本次调查仅有系统文件只读采集和离线分析，没有新增设备写入、reboot、fastboot 往返或候选启动；主线 Linux / Omarchy、console / EP2 和早期挂死恢复仍未验收。
+
 ## 2026-10-27：一次 pmsg 完整写入及正常 reboot 成功，读回失败
 
 在 `e1075ba633c4b502d75a9b28eec178dce1131b8b` 上执行明确授权的一次校准，私有脚本及实际 helper 均核对身份。helper 经 `/dev/pmsg0` 完整追加 63 字节，正常 reboot 后 boot_id 改变，Android 启动完成、root 可用、槽位 b、内核及 boot_b 哈希符合预期；前后 pstore 均为空，payload 出现次数为零，脚本退出 1。最早未满足的是读回条件，不是写入或返回 Android。约 40.6 秒为整个脚本运行时间，不是独立 reboot 耗时。

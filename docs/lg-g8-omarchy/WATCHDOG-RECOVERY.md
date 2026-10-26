@@ -152,4 +152,4 @@ exec /init
 
 2026-10-27，用户明确批准后已执行 [一次性 pmsg 保留校准](PMSG-CALIBRATION.md)：63 字节完整写入、正常 Android reboot 返回且 boot_b 哈希匹配，但 pstore 为空，读回失败。此前命令启动前的自动审批拒绝属于历史时点，当前阻塞是日志读回链路未建立。没有重复写入或 reboot，也没有新候选启动。
 
-下一步先核对实际运行 Android 的 pstore 消费与删除实现，并设计早于消费者的只读采集；本次空读回尚不能区分保留、识别/导出和用户态清理。console / EP2 保留、裸探针 PSCI reset，以及抵达 reset 前挂死后的恢复仍需分别验证，不能将完整 pmsg 写入或上述静态看门狗证据当作全自动迭代验收。设备最后实测为本次 reboot 后的同一 Android 启动，启动完成、root 可用、槽位 b、内核符合预期；没有后台设备任务。结论变化见 [工作日志](WORKLOG.md)，临时用户态计时器见 [技术债](TECHNICAL-DEBT.md)。
+已核对实际 BootReceiver 与三个原生组件的相关路径：普通读取没有发现直接删除，`logcat -L -c` 有显式 pstore unlink，但无本次调用及删除成功的证据。已确认 pstore mount 早于首次 logd，挂载后同步快照方案只完成设计，详见 [消费者调查与方案](PMSG-CALIBRATION.md#实际-android-消费者与启动顺序)。下一步补齐完整 init 导入集合、更早服务、logcatd 实体与触发条件，再验证 helper 的权限、暂存生命周期和本机边界行为；本次空读回尚不能区分保留、识别/导出和用户态清理。console / EP2 保留、裸探针 PSCI reset，以及抵达 reset 前挂死后的恢复仍需分别验证，不能将完整 pmsg 写入或上述静态看门狗证据当作全自动迭代验收。设备最后实测为本次 reboot 后的同一 Android 启动，启动完成、root 可用、槽位 b、内核符合预期；没有后台设备任务。结论变化见 [工作日志](WORKLOG.md)，临时用户态计时器见 [技术债](TECHNICAL-DEBT.md)。
