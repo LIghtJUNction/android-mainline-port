@@ -60,7 +60,7 @@ suspend、panic 和显式 disable 有不同处理，其中 disable 可以调用 
 
 四次调用均进入 `0x666f8`，实际存储在 `0x66740: str w19, [x20]`。之后存在通向 ARM64 入口的路径：`0x305f8–0x3060c` 载入保存的入口指针和 DTB，设置 x1–x3=0 后 `blr x8`。核心指令已由主线程独立核对，不仅依赖子 agent 报告。
 
-这是 LinuxLoader 主动重新配置和启用看门狗的静态证据。此前只讨论“是否继承 Android 看门狗”的假设不完整。但写入之后仍调用 `0x2bbb8`、`0x3e568`、`0x4af70`，以及条件调用 `0x4b1d8`；其中的子调用未穷尽检查。因此以下两点仍未证明：
+这是 LinuxLoader 主动重新配置和启用看门狗的静态证据。此前只讨论“是否继承 Android 看门狗”的假设不完整。写入之后依次调用 `0x2bbb8`、`0x3e568`（w0=1）、`0x4af70`，并按返回 flag 条件调用 `0x4b1d8`；本次补查的行为见下节。直接指令与部分尾链已有识别，动态接口和安全固件实现仍未穷尽，因此以下两点仍未证明：
 
 - Linux 入口瞬间看门狗仍启用，且在完整交接过程中保持预期配置。
 - 失败的 `lg-native-3` 实际经过这些写入，并由看门狗触发了观察到的重启。
@@ -70,6 +70,22 @@ suspend、panic 和显式 disable 有不同处理，其中 disable 可以调用 
 另一路 Fastboot 初始化在 `0x60dc8–0x60de8` 通过 BootServices+`0x100` 发起结构对应 `SetWatchdogTimer(0, 0x10000, 0, NULL)` 的调用；字符串含 `Fastboot: Couldn't disable watchdog timer: %r`。它说明 Fastboot 请求关闭 UEFI watchdog timer，不能否定后续 Linux 启动路径的 APSS MMIO enable。当前没有证明这两个接口控制的是同一机制。
 
 复核可按以上镜像地址在 `LinuxLoader.dis` 定位；四次写入与 ARM64 入口均位于已独立读取的行 48370–48544。服务表来源（行 87074–87089）、UEFI watchdog 调用（行 98114–98122）与 `strings.txt` 行 4062–4064 由只读子 agent 提供，核心写入、入口、store helper 和文件哈希已独立核对。
+
+### 启用后的交接子调用：已识别行为与边界
+
+以下补查沿用上表的同一份 LinuxLoader，不涉及固件修改或真机执行。
+
+`0x2bbb8` 的主路径屏蔽 IRQ/FIQ 和 SError，执行数据缓存 set/way 维护与指令缓存失效，按当前异常级别清除 SCTLR.C、SCTLR.I、SCTLR.M，并执行 TLB 失效和 barrier。缓存遍历 `0x52028` 使用 CLIDR_EL1、CSSELR_EL1、CCSIDR_EL1，回调 `0x51bc0` / `0x51bd0` 分别执行 `dc cisw` / `dc csw`；`0x5602c` 尾链执行 `ic iallu; dsb sy; isb`。这些指令说明交接还包含缓存、MMU 与地址转换状态处理，不能将四次 watchdog 写入视为入口前的最后动作。
+
+缓存封装还调用 `0x52310`：`mrs x0, DAIF; tst w0, #0x2`，再返回布尔值；`0x68910` 据此决定是否走到 `0x51b44` 的 `DAIFClr #3`。原始编码已核对：读取与测试分别为 `0xd53b4220`、`0x721f001f`。测试位是位 1，而架构 DAIF 中 IRQ/FIQ 掩码位为位 7/6，因此不能把该封装直接解释成正确保存并恢复 IRQ/FIQ 状态。这里只记录静态指令与语义疑点，没有证明失败候选执行过该路径或由此失败。
+
+`0x3e568` 查询 `Shared_IMEM_Base` 和 `MPM2_SLP_CNTR_ADDR`。其服务表来自入口参数：PE entry RVA=`0x1000`，经 `0x10a8` 保存 ImageHandle / SystemTable；`0x110c` 调用 `0x13e0` 将 x20/x19 恢复到 x0/x1，随后 `0x1110` 调用 `0x561e0`，把 `[x1+0x58]` 保存到 `0xb13e8`。固件内嵌 `UefiRuntimeServicesTableLib.c` 路径及 `gRT != ((void *) 0)` 断言，与 UEFI RuntimeServices 布局相符。查询在 `0x3e664` / `0x3e6f4` 经该表+`0x48` 间接调用，结构对应 `GetVariable`。w0=1 的交接调用在取得有效指针且读取到非零计数时，向取得的 Shared_IMEM_Base+`0x6b4` 写入该计数。运行时变量值、最终地址及接口实现未知，不能由变量名称排除其副作用。
+
+`0x4af70` 读取 `0xb1391` 的字节 flag。`0x4af80` 的 `GetVmData` 路径通过 SCM 协议间接接口，以 w1=`0x02000609` 发起调用；在状态成功且取得非零结果时，`0x4b09c` 可以将 flag 设为 1，因此镜像初值为 0 不能证明条件调用不发生。直接调用点包括 `0x23c0` 和 `0x4b2a0`；后者所属函数 `0x4b290` 的上层调用点 `0x2e1dc` 已先要求 flag 非零，不能据此证明首次设置发生的时刻。尚未完整追溯 `0x23c0` 的启动上下文，也没有真实接口返回值。
+
+flag 非零时，`0x4b1d8` 经 `0x56ea0` 执行 `smc #0`。首参数由写 w8 再存 x8 形成，是零扩展的 `0x0000000086000000`；其他参数不能假定全零。返回日志称 `returned Smc call to disable Uart logging from Hyp: 0x%x`，只支持识别调用意图，安全固件实际行为仍未知。该路径和 BootStats 还使用 `0x4c398`；其正文包含间接调用、尾跳及其他子调用，不能当作没有副作用的简单内存分配函数。日志后端、异常路径和动态协议也没有穷尽。
+
+这些结果缩小了启用后到入口之间的静态未知范围，仍不能证明入口瞬间的 watchdog EN、计数、访问权限或最终配置，不能给出实测 timeout 和复位去向。后续真机验收仍须按本文完成标准取得可归属证据。
 
 ## 失败候选：用户态计时器和缺少模块
 
