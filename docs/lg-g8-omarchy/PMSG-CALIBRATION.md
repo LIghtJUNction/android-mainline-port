@@ -95,23 +95,33 @@
 | 1204、1206 | `class_start hal`、`class_start core` | `on boot` |
 | 1208–1210 | `class_start main`、`class_start late_start` | `on nonencrypted` |
 
-`logcatd.rc:55` 的服务命令含 `-L`，但不含 `-c`；其启动受 logpersist 属性条件控制。`logcatd.rc:42` 的 clear action 含 `-c -f /data/misc/logd/logcat`，不含 `-L`。两者是不同调用，不能组合成已发生的 pstore 清除。`/system/bin/logcatd` 实体及本次 logpersist 属性和服务执行状态尚未核实，不能将上述 `logcat` 实现直接视为该服务实际执行的实现；原生读取与显式删除的静态核对结果见上一节。
+`logcatd.rc:55` 的服务命令含 `-L`，但不含 `-c`；其启动受 logpersist 属性条件控制。`logcatd.rc:42` 的 clear action 含 `-c -f /data/misc/logd/logcat`，不含 `-L`。两者是不同调用，不能组合成已发生的 pstore 清除。后续只读采集核实 `/system/bin/logcatd` 是 780 字节的 shell wrapper，SHA-256 为 `00ba1429ba687487f9983b1862a45cab64997da45f98103bf68180ad8595a6a2`：收到 `-L`/`--last` 时先调用 `logcat "$@"`，再去掉 last 参数并 exec 当前日志调用，不添加 `-c`。裸 `logcat` 依赖 PATH，服务启动时的 PATH 尚未核实。采集时 `init.svc.logd=running`、`init.svc.logd-reinit=stopped`、`init.svc.logcatd` 为空，`logd.logpersistd.enable=true`；当前属性和 wrapper 字节不能证明校准启动时的调用或删除结果。
 
-该顺序提供了早于已知 `start logd` 的候选观测位置。主 init 还导入硬件、vendor、USB 和 zygote 规则；`early-init` 中已有 `ueventd`、`apexd-bootstrap` 等执行点。尚未核对完整导入集合和所有更早服务，不能宣布该位置早于全部消费者。
+该顺序提供了早于已知 `start logd` 的候选观测位置。后续只读采集获得 179 个文件，其中 171 个 rc；采集前后为同一次 Android 启动，离线逐项长度与 SHA-256 复核通过。唯一显式 MISSING 为 `/init.qcom.rc`，但采集集合不完整，不能据此说其他导入都已覆盖。已展开的 import 另有七个未采目标：
 
-## 更早只读观测方案（设计，未实施）
+- `/vendor/etc/init/hw/init.qcom.test.rc`
+- `/init.lge.log.rc`
+- `/vendor/etc/init/hw/init.lge.usb.dev.rc`
+- `/vendor/etc/init/hw/init.lge.usb.comp.rc`
+- `/vendor/etc/init/hw/init.lge.audio.rc`
+- `/vendor/etc/init/init.kinibi.rc`
+- `/vendor/etc/boringssl_self_test.zygote64_32.rc`
+
+这些是未采集，不能标为设备上不存在；其中 `/init.lge.log.rc` 是明确的日志调查缺口。APEX 扫描仅覆盖 `/apex/*/etc/init/`，漏了 `/apex/<name>/etc/*.rc`；部分派生服务定义和厂商脚本实现也未采集。import 属于解析过程，采集编号或文本位置不代表运行顺序；`start`/`exec_background` 不等待，`exec`/`exec_start` 等待。`early-init` 已有 ueventd、apexd-bootstrap、prng_seeder，厂商规则还有其他启动点，不能宣布候选位置早于全部消费者。已采 rc 未见显式 pstore 读删，不排除原生程序行为；当前 mountinfo 也不能证明整个启动期间 `/dev` 的生命周期。
+
+## 更早只读观测方案（helper 已实现，未部署）
 
 目标是在 pstore 首次挂载后立即保全内核已导出的文件，再与 Android 返回后的状态比较。它只能观测内核导出之后的链路；即使早期快照为空，也不能直接证明 DRAM 内容丢失。
 
-1. **先补齐启动条件。** 只读核对实际展开的 init 导入集合、其中更早启动的服务、`logcatd` 的实体身份与属性触发状态。确认选定 action 的执行顺序、helper 可执行位置和 SELinux 权限后，再准备有明确字节差异的实施材料。此处还没有可部署的 init 修改。
-2. **在挂载后同步采集。** 候选位置是上述 `mount pstore` 之后、首次 `start logd` 之前，优先紧接挂载语句。拟使用 init 等待结束的同步 helper，不能用异步 service 或 `boot_completed` 采集代替。必须验证挂载成功及文件系统类型；挂载失败单独记错，不能伪装成空目录。
-3. **暂存于启动期内存。** 此时不依赖 `/data`。拟在经确认可用的 `/dev` tmpfs 中创建本次专用、root 所有的 `0700` 目录，文件以 `0600`、排他创建；该存储的实际挂载、标签及后续生命周期仍待核实。不沿用固定旧目录，不覆盖历史证据，不修改 pstore 权限，不 unlink、不写入任何 pstore 文件或活跃 console。
-4. **限制采集并记录结果。** helper 只接收确定的 pstore 挂载点及新输出目录；源端不跟随链接，拒绝非普通文件及目录遍历。拟定上限为 32 个文件、单文件 4 MiB、总计 8 MiB，父进程以单调时钟限制整个步骤为 5 秒；超限或超时标记不完整。逐项记录名称、读取长度、SHA-256、错误及采集起止时间，保留 mount 信息和私有 boot_id。枚举失败、读取失败、零字节文件和成功枚举后零文件须区分；只有完整采集才能用于“早期为空”的判断。超时或 helper 失败后继续正常启动，不能为取证无限阻塞 Android。
-5. **同一次启动回收对照。** Android/ADB 返回后先取走早期快照，再采集一次当前 pstore；核对 boot_id 一致、helper 完成状态，以及主机和设备端每个文件的长度和哈希。先保存在新私有目录并验证，再处理设备端临时输出；不自动 reboot 或重试写入。tmpfs 不跨再次重启保留，若本次 Android 未返回，该快照可能无法回收，须如实记为无结论。
+1. **先补齐启动条件。** 在上述采集范围基础上补齐缺失的 init/APEX 规则和更早服务、脚本，核对触发条件。确认选定 action 的执行顺序、helper 可执行位置和 SELinux 权限后，再准备有明确字节差异的实施材料。当前 root shell 是 Magisk 域，读取成功不能代表 init helper 获准；当前 `/system/bin` overlay 也不能代表最早启动身份。此处还没有可部署的 init 修改。
+2. **在挂载后同步采集。** 候选位置是上述 `mount pstore` 之后、首次 `start logd` 之前，优先紧接挂载语句。init 必须等待 helper 结束，不能用异步 service 或 `boot_completed` 采集代替。正式 helper 固定读取 `/sys/fs/pstore`，检查 pstore 文件系统；挂载或源访问失败不能伪装成空目录。
+3. **暂存于启动期内存。** 已实现仅接受 `--out /dev/<新目录名>`，检查直接父目录为 tmpfs、有效 UID 0，新目录 `0700`、文件 `0600` 且排他创建；实际启动期标签、权限及后续生命周期仍待核实。不覆盖历史证据，不修改 pstore 权限，不 unlink、不写入任何 pstore 文件或活跃 console。
+4. **限制采集并记录结果。** 已实现最多 32 条、单文件 4 MiB、总记录内容 8 MiB，逐级拒绝链接、目录遍历和非普通源文件。manifest 记录原名字节、保存字节数、SHA-256、错误和单调时间，另存 mountinfo 与私有 boot_id；部分短写按实际保存前缀计数。父进程默认以 5000 ms 单调预算监督 fork 后 worker，fork 前设置及最终状态 I/O 没有独立超时，不能称整个步骤的严格 5 秒上限。超时 SIGKILL 后不阻塞等待，不可中断睡眠可能使 worker 暂未退出、部分输出仍变化。退出码 0、完整成功的状态与 manifest、回收后长度和摘要校验须共同成立；任意失败、超限或超时都不完整。详细判据与局限见 [helper 说明](../../tools/lg-g8/PSTORE-SNAPSHOT.md)。
+5. **同一次启动回收对照。** Android/ADB 返回后先取走早期快照，再采集一次当前 pstore；核对 boot_id 一致、helper 完成状态，以及主机和设备端每个文件的长度和哈希。先保存在新私有目录并验证，再处理设备端临时输出；不自动 reboot 或重试写入。tmpfs 不跨再次重启保留，若 Android 未返回、目录消失或超时 worker 未停止，不能声称完整回收。
 
 判读边界：早期文件中存在完整新 payload，而稍后源文件消失，可以把变化缩小到两次采集之间，但还需执行证据归因具体消费者；文件存在而 payload 不在，继续查旧记录内容及导出链；挂载成功、完整早期快照为空，只能说明该时点没有可见导出文件，仍不能区分保留、头部识别、旧日志保存、导出失败或更早清理。无论哪一项都不验收 console / EP2 或早期挂死恢复。
 
-该方案需要改变启动期执行路径，当前只完成设计，没有部署、构建新启动镜像或新增设备重启。实施前还需完成上述条件核对、helper 的本机边界验证，以及该次启动修改和实验的明确授权；此前一次 pmsg 写入/reboot 的授权已经用于原校准。
+[C helper](../../tools/lg-g8/pstore-snapshot.c) 和 [主机边界测试](../../tools/lg-g8/local-sim/tests/test_pstore_snapshot.py) 已实现，13 项本机测试通过，包括输出创建失败、短写、关闭失败和超时；故障注入发现并修复了短写后计数/摘要未对应实际保存内容的问题。NDK r30（30.0.16248370）以 API 34 目标静态构建成功，AArch64 ELF 无 PT_INTERP/PT_DYNAMIC；API 37 note 已追到 NDK 预编译静态启动对象，不能据此或目标 API 数字认定 Android 14 运行兼容性。工具尚未在手机执行，没有部署、构建新启动镜像或新增设备重启。接入前仍需上述启动/权限/生命周期核对、兼容性验证和具体实验材料；此前一次 pmsg 写入/reboot 的授权已经用于原校准。
 
 ## 私有证据
 
@@ -122,8 +132,11 @@
 - `private/pmsg-readback-diagnosis-20261027-once-1/`：只读命令结果、源码摘取、BootReceiver 日志及启动归档元数据；`report.json` 与 `followup-report.json` 记录查询退出码、时间和输出哈希。最初两项扫描返回 1 的情况保留，后续定向元数据查询均返回 0。
 - `private/android-pstore-consumers-20261027-readonly-1/`：七份实际系统文件与采集 manifest；`dex-offline-1/` 保存三个 DEX 的校验、反汇编及 BootReceiver 摘录，`native-analysis-1/` 保存三个 ELF 的符号、反汇编、动态依赖及 mini-debug 分析。采集前后为同一次 Android 启动，原始材料均不提交。
 
+- `private/android-init-scope-20261027-readonly-1/`：179 个成功采集文件（171 个 rc）、实际 logcatd wrapper、身份与启动前后检查；逐文件长度/摘要复核通过，manifest SHA-256 为 `986bc467d0437cbed38fac7d9c5d2ffea42c5d1d3c5d19f4377e795c0c77c5ce`。七个未采 import、APEX 顶层 rc 与厂商脚本缺口仍保留，不能把该集合当作完整启动规则。
+- `private/pstore-snapshot-20261027-local-1/`：保存原始 13 项成功测试结果、对应源码/测试副本、当前静态产物、采集脚本与 NDK/API 调查材料；52 份文件逐项校验内容、长度与 `0600` 权限，目录为 `0700`。`verification.json` 区分原始测试与本次归档检查，未重跑测试；`manifest.json` SHA-256 为 `220ea38574c41b80640520319e00a739c1e01944cec6a3604cedfeb9e7ee6a61`。`build/pstore-snapshot-android-current` 对应修复后源码；`ndk-audit/snapshot` 及其 map 为修复前调查产物，不混作当前构建。代理调查材料的完整保留不代表主线程已逐条独立复审所有反汇编结论，亦不构成 Android 运行验收。
+
 ## 下一步与停止边界
 
-实际 BootReceiver、原生读取/显式删除和已采集 init 顺序的静态调查已完成上述范围，更早快照只完成设计。下一步补齐实际 init 导入集合与更早服务、logcatd 实体及触发条件，确认 helper 的运行权限、暂存生命周期并完成本机边界验证，形成可审查的启动修改与单次实验材料。现有证据仍不能定位首次丢失位置；新增实验须预先记录单一变量、预期、期限和恢复路径。此次一次性校准不自动扩展为第二次写入或 reboot。
+实际 BootReceiver、原生读取/显式删除、logcatd wrapper 和已采集 init 顺序的静态调查已完成上述范围；更早快照 helper 已实现，13 项主机测试和静态交叉构建通过，未在 Android 执行或部署。下一步补齐七个未采 import、APEX 顶层 rc 与更早服务/脚本，核对触发条件、PATH、helper 运行兼容性和权限、暂存生命周期，形成可审查的启动修改与单次实验材料。现有证据仍不能定位首次丢失位置；新增实验须预先记录单一变量、预期、期限和恢复路径。此次一次性校准不自动扩展为第二次写入或 reboot。
 
 设备最后一次实测仍为同一轮 reboot 后的 Android，启动完成、root 可用、槽位 b、内核符合预期；没有后台设备实验。console / EP2 读回和抵达 reset 前的挂死恢复仍需独立证据，不发送现有 EP2，也不原样重试失败的 `lg-native-3`。

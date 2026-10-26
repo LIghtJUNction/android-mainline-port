@@ -2,6 +2,24 @@
 
 按结论变化记录，当前验收与下一项设备实验以 [STATUS.md](STATUS.md#当前验收与下一步) 为准。原始设备资料留在私有工作区，不提交。
 
+## 2026-10-27：对照其他手机的主线 Linux 与桌面移植
+
+通过网页发现项目，再用 gh 核对固定提交、实际补丁、设备树、构建配方和调试记录，并行调查同 SM8150、相邻代 LG 和其他手机移植。形成 [公开移植对照](MAINLINE-PORTING-RESEARCH.md)，重点核查 OnePlus 7T Pro 的 ABL 直接启动与 USB SMMU 调试，以及 OnePlus 7 Pro 的 Arch Linux ARM、Hyprland 和共享手机交互层。完整 Omarchy/theme-repository 安装在后者仍属未来工作；这些外部作者记录不是本会话 G8 真机验收。
+
+研究支持先离线核对 LG 的 ABL/DTB/DTBO 契约、完整固件保留内存并集、bootloader framebuffer 的 clock/interconnect，以及 USB 的 SMMU 连接和运行域。Hotdog 早期入口补丁关闭 APSS watchdog，后续补丁还恢复过早期移除的 UFS SMMU，不能抽取早期 workaround 当最终方案。地址、电源、板号与 SID 均需核对 LG 实际板型。
+
+本次未执行外部刷写脚本、联系维护者或操作手机，没有构建新内核/启动镜像、重跑 pmsg 校准或部署快照 helper。G8 主线 Linux / Omarchy、日志读回与早期挂死恢复仍未验收，既有设备实验前提不变。
+
+## 2026-10-27：实现只读快照 helper，明确 init 调查范围
+
+后续只读采集获得 179 个文件、171 个 rc，采集前后为同一次 Android 启动，逐项长度和 SHA-256 复核通过。核实实际 logcatd 为 shell wrapper，不添加 `-c`；当前属性和静态路径不能证明校准启动时执行或删除成功。唯一显式 MISSING 为 `/init.qcom.rc`，但导入集合不完整：另有七个未采 import、APEX 顶层 rc 和更早服务/厂商脚本缺口，不能把未采集当作不存在，也不能宣称观测点早于全部消费者。
+
+新增 [pstore 快照 helper](../../tools/lg-g8/PSTORE-SNAPSHOT.md)，固定只读 `/sys/fs/pstore`、排他创建 `/dev` tmpfs 新目录，限量保存实际成功复制的内容、摘要及状态。13 项主机测试通过，覆盖链接/覆盖保护、数量/容量边界和故障路径；故障注入发现并修复了先保存 7 字节后 ENOSPC 时计数与摘要仍报告空内容的错误。成功采集需联合核对进程退出码、状态、manifest 与回收后的长度/摘要；5 秒只是 fork 后监督预算，超时 worker 也未必立即退出，不构成完整启动期限或恢复保证。
+
+NDK r30 以 API 34 目标静态交叉构建通过，无 PT_INTERP/PT_DYNAMIC。API 37 note 已追到公共预编译启动对象；android21/28/34 对照使用同一公共对象和 libc.a，不能由目标数字推出 Android 14 运行兼容性。源码/测试/产物指纹和具体限制见工具说明，调查与验证材料保存在私有目录。
+
+本次仅有系统文件只读采集和本机实现/验证，没有上传或执行 helper、部署 init、生成启动镜像、新增 pmsg 写入或 reboot。后续仍需补规则、权限、执行位置与生命周期，再形成具体实验材料；原一次性校准授权已经用完。主线 Linux / Omarchy、console / EP2、裸 PSCI 和早期挂死恢复仍未验收。以下各节保留当时的设计和验证状态。
+
 ## 2026-10-27：核对实际 pstore 消费者并设计更早快照
 
 在校准后的同一次 Android 启动中，只读采集实际 `services.jar`、三份 init 规则、`logcat`、`logd` 和 `liblog.so`，七份文件的长度与 SHA-256 均核对通过；三个 DEX 的 checksum 和反汇编检查通过。BootReceiver 已查归档路径没有直接删除源文件，直接 `File.delete()` 目标是临时 tombstone 和 shutdown metrics，不能归因为 pmsg 删除。
