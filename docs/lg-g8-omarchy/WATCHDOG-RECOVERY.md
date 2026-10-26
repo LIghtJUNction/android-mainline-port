@@ -138,6 +138,16 @@ exec /init
 | `out/kernel-v50/.config` | `2453288a29469507adf5fc1e235e1b4ff1d4eb7115af8bfa67490ad616f8e9ab` |
 | `audit/reboot-route-20261026/vendor-boot-b.config` | `0e28ed4033e38d0e35a288e60da786248c17e9187a09b5a73b70fd30f1721ec7` |
 
+## 现存文件快照：不追认历史构建来源
+
+2026-10-26，在集成仓 `47d7b8316762542f0bdfd9a81191aab63202211e` 基础上，使用新增的 [采集工具](../../tools/lg-g8/snapshot-kernel-evidence.py) 只读采集 13 个显式指定文件：当前 tiny Image、tiny/v50 配置、历史候选 DTB、watchdog 驱动、SoC DTSI、两个 alphalm DTS、Makefile，以及四个生成元数据文件。采集前后检查未发现这些文件字节变化，没有递归采集源码或 include 依赖。
+
+当前 Image 为 25016832 字节、候选 DTB 为 95765 字节，SHA-256 均与上文 `lg-native-3` manifest 声明相等；tiny/v50 配置、watchdog 驱动和 SoC DTSI 的哈希也与上表一致。比较只说明现存字节与历史 manifest 声明一致，未认证该声明，也未证明当前配置或源码是历史 Image / DTB 的构建输入。旧 manifest 未修改。
+
+私有报告为集成仓根目录 `private/kernel-evidence/snapshot-20261026T151922913315Z.json`，权限 `0600`，由根 `.gitignore` 排除，不随源码提交。报告 SHA-256 为 `c50e939ac07fb0f07bc531a9e7ba6a49e942fda8d498449d960393040baa0f59`；其中记录的采集器 SHA-256 为 `77fd0f21673d07c6717ee87587da72b9c36522eac8467e535755f7600a093dd4`，旧 manifest SHA-256 为 `c4a3f6662c5a9cf8784d2923866f4f816495ef7cc6aaf43f2b52d39c2157cccf`。报告保存完整选定文件指纹和绝对路径；使用与限制见 [工具说明](../../tools/lg-g8/local-sim/README.md#现存内核文件指纹)。
+
+本机六项测试通过，覆盖匹配/差异、拒绝覆盖、异常输入、FIFO 不阻塞、链接保护及报告权限。采集没有生成内核或启动镜像，也没有访问手机；仍不构成历史来源、可复现构建、格式合法性或自动恢复验收。
+
 ## 下一项设备实验与阻塞
 
 唯一下一项设备实验仍是 [一次性 pmsg 保留校准](../../tools/lg-g8/local-sim/entry-probe/README.md#保留校准计划尚未执行)。此前自动审批在命令启动前拒绝 helper 上传、root 执行、一次 `/dev/pmsg0` 追加和正常 Android reboot，理由是继承摘要中的助手授权判断不能证明用户同意，需要对指定设备上的该操作明确批准。此次没有重试、换工具或委派绕过拒绝。

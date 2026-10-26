@@ -12,6 +12,7 @@
 | 最小 ARM64 ENTER/TARGET 交接探针 | 离线通过 | EP2 halt/PSCI 两种 4096 字节产物，各通过 17 个 CPU 场景及 12 组独立格式检查；已修复未对齐访存、PSCI EL3 非法 SMC 及记录缺少完整性校验。三项修复及补充的 4 字节对齐源地址修复均完成独立复核；提交中断时序尚未验证。尚无真机执行或恢复证据。详见 [探针说明](../../tools/lg-g8/local-sim/entry-probe/README.md)。 |
 | pmsg 一次性校准脚本 | 离线通过 | 私有脚本修正远端退出码和等待期限后完成独立复核；实际 ARM64 helper 的完整写入、短写、写失败、打开失败四种模拟均通过。设备执行被自动审批拒绝，尚未上传或执行 helper。详见 [校准说明](../../tools/lg-g8/local-sim/entry-probe/README.md#保留校准计划尚未执行)。 |
 | 看门狗与早期挂死恢复 | 有源码线索 | 已核对 ABL 成功路径主动启用 APSS watchdog，以及后续缓存/MMU、BootStats 和条件 SMC 的静态行为；中断状态测试位有疑点，动态接口行为仍未知。失败候选的 initramfs 无模块，120 秒计时器从用户态计时。最终硬件状态及超时恢复尚未验收，详见 [看门狗证据](WATCHDOG-RECOVERY.md)。 |
+| 现存内核文件指纹采集 | 离线通过 | 13 个显式指定文件完成采集，Image / 历史 DTB 匹配旧 manifest；六项工具测试通过。当前配置与源码仍不能追认为历史构建输入，详见 [文件快照记录](WATCHDOG-RECOVERY.md#现存文件快照不追认历史构建来源)。 |
 | warm reset 日志保留与读回 | 有源码线索 | 此前只读检查确认 `/dev/pmsg0` 存在、pstore 已挂载且为空；尚未写入或进行重启读回校准。pmsg、console 和裸探针 PSCI 路径必须分别核实。 |
 | 主线显示、触控及 Omarchy | 待调研 | 尚未进入真机功能验收；当前 tiny kernel 关闭 DRM。 |
 

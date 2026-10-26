@@ -76,6 +76,26 @@ BootShim 检查停在 UEFI 的第一条指令前。QEMU 使用通用 `virt` 主�
 QEMU 没有 LG G8/SM8150 主板模型，不能验证它的内存保留区、显示、触摸、UFS、电源和物理 USB。
 因此，结果证明本机的软件启动和修复有效，不能据此宣称 LG G8 或 Omarchy 已适配完成。
 
+## 现存内核文件指纹
+
+`../snapshot-kernel-evidence.py` 只读显式指定的本地文件，不构建、不执行输入，也不连接设备。用于记录采集时的 Image、配置、DTB，以及通过 `--file LABEL=PATH` 追加的选定源码或生成元数据。可选 `--candidate-manifest` 比较既有 handoff manifest 的 `kernel_sha256` 与 `files["linux.dtb"]`；不匹配记为 `false`，命令仍成功，不改写原声明。
+
+从仓库根目录运行（将输入路径换成需要采集的实际文件）：
+
+```sh
+mkdir -p private/kernel-evidence
+python3 -I tools/lg-g8/snapshot-kernel-evidence.py \
+  --kernel /path/to/Image --config /path/to/.config --dtb /path/to/linux.dtb \
+  --file selected-source=/path/to/qcom-wdt.c \
+  --candidate-manifest out/abl-handoff/lg-native-3/manifest.json \
+  --out private/kernel-evidence/new-snapshot.json
+python3 -I tools/lg-g8/local-sim/tests/test_kernel_evidence.py
+```
+
+输出父目录必须存在。报告含绝对路径，保存到 Git 忽略的仓库根 `private/`；工具以 `0600` 权限新建文件，拒绝覆盖现有文件或符号链接，拒绝 FIFO 等非普通输入。六项本地测试覆盖身份比对、差异记录、原文件保护、重复标签、异常输入和输出链接保护。
+
+SHA-256 相等只支持文件字节身份一致。目录、时间戳、版本标签及当前配置不能追认历史构建输入；manifest 声明未经身份认证。本工具不覆盖完整源码或 include 依赖，不证明上游提交、可复现构建、文件格式或真机启动。前后检查可以发现普通文件变化，不构成原子文件系统快照。已采集结果与历史候选的关系见 [看门狗证据](../../../docs/lg-g8-omarchy/WATCHDOG-RECOVERY.md#现存文件快照不追认历史构建来源)。
+
 ## 输出
 
 默认输出在仓库的 `out/local-sim/`：
