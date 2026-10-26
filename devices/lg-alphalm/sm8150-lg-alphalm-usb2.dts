@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* Optional USB2 diagnostic profile; the baseline board remains the default. */
+#include "sm8150-lg-alphalm-board.dts"
+
+&usb_1 {
+	qcom,select-utmi-as-pipe-clk;
+};
+
+&usb_1_dwc3 {
+	maximum-speed = "high-speed";
+	phys = <&usb_1_hsphy>;
+	phy-names = "usb2-phy";
+};

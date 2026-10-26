@@ -2,6 +2,14 @@
 
 按结论变化记录，当前验收与下一项设备实验以 [STATUS.md](STATUS.md#当前验收与下一步) 为准。原始设备资料留在私有工作区，不提交。
 
+## 2026-10-27：主线 USB2 诊断配置
+
+重新编译仓库基线板树，逐字节复现已审计的 `eb6f12cfedf7cdd9591b27cc138e79ee08efa24b36053ff5bac80fc21166d5d9`，记录 33 项实际 CPP 输入指纹。旧失败候选的 Linux DTB 与该基线只差 `/chosen` 的启动参数和 initrd 地址；实际 boot 封装的解压 shim、Image/initramfs/DTB 字节链一致，四项 shim CPU 检查通过。Image 的 IKCONFIG 提取后与仓库 tiny 配置完全一致，补上失败 Image 与配置的直接关联；这不认证全部源码和历史构建环境，也不证明手机实际进入 shim。
+
+本机 PHY core 先查 provider，再检查 status；禁用 QMP 通常不注册 provider，现有 DWC3 USB3 引用可因此返回 EPROBE_DEFER。DWC3 不因 maximum-speed 自动跳过该获取，单纯限速不足。新增独立 [USB2 诊断板树](../../devices/lg-alphalm/USB2-DIAGNOSTIC.md)，包含校准基线，仅覆盖四项属性：只消费 HS PHY、只保留 usb2-phy 名称、限制 high-speed、wrapper 选择 UTMI 时钟。未猜改 USB3 供电/地址/SID，原板树和外部源码保持不变。
+
+早期 Android 快照调查在执行路径/专用域尚未闭合处收束，未部署；它保留为日志辅助，不继续作为主线开发的扩展调查。新增 USB2 配置属于主线候选准备，没有生成或发送新 Android boot 镜像，没有设备操作，主线启动与 USB 枚举仍未验收。完整编译和 20 项语义/反例检查通过，包含保留区越界修改、保留双 PHY 和缺失 UTMI 三项拒绝反例；39 项实际输入与工具指纹前后一致，重复输出目录拒绝且原产物不变。最终 USB2 DTB 为 `b65a8f4cbbfa4bfab9360f74bf1872fd6d2814aab506897c82c166bdfd080215`，报告在 `out/usb2-profile-20261027-2/verification.json`；初次引用编号误报证据保留在 `-1/`，已修正比较器，未掩盖为首次全部通过。详细结果见上述诊断说明；基线证据在 `out/mainline-next-baseline-20261027-1/`，旧交接核对事后归档在 `out/handoff-envelope-review-20261027-1/verification.json`，均被 Git 忽略。旧 handoff 验证器未自动验证最终 boot 封装的缺口单独保留，本轮没有顺带修改既有未跟踪工具。
+
 ## 2026-10-27：真机快照运行测试与 init/APEX 补采
 
 已在 LG G8 当前 Android 14 的 Magisk root 域首次执行已有正式 pstore 快照产物，未重建 helper。执行前只读确认 model/device、槽 b、启动完成、root、内核、修复 marker 与 boot_b 哈希，并校验本机有效恢复备份。最初 adb push 因 root 的 0700 目录拒绝 shell 写入而失败，helper 尚未执行；保留失败记录后改用 root 标准输入传输，哈希一致后首次执行。helper 退出 0，status/manifest 完整，pstorefs 枚举为 0 条，四份回收文件的长度、SHA-256 和权限核对通过，boot_id 未变；校验后清理并确认该 nonce 的远端临时文件已移除。
